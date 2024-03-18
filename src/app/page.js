@@ -1,95 +1,112 @@
+"use client";
+
 import Image from "next/image";
 import styles from "./page.module.css";
+import { useState, useRef } from "react";
+import blank from '../../public/blank.jpg';
 
 export default function Home() {
+  const [image, setImage] = useState(blank);
+  const [InstaName, SetInstaName] = useState('');
+  const [IsImgSeleected, SetImgSelected] = useState(false);
+  const [ShowDownloadBtn, SetShowDownloadBtn] = useState(false);
+  const [file, Setfile]= useState();
+
+  const fileInput = useRef(null);
+
+  const handleImage = async (file) => {
+    if (InstaName == '') {
+      alert('인스타 ID를 입력하세요.');
+    } else {
+      const formData = new FormData();
+      formData.append('InstaID', InstaName);
+      formData.append('image', file);
+
+      try {
+        await fetch('http://127.0.0.1:8000/image', {
+          method: 'POST',
+          body: formData,
+        })
+          .then(res => res.json())
+          .then(res => {
+            console.log(res);
+            if(res['status'] == "fail") {
+              alert('메타 데이터를 찾지 못했습니다. 다른 사진으로 다시 시도해주세요.');
+            } else if(res['status'] == "success") {
+              setImage(`data:image/jpeg;base64,${res['base64']}`);
+              SetShowDownloadBtn(true);
+            }
+          })
+      } catch (error) {
+        console.log(error);
+      }
+    }
+  }
+
+  const DownloadImage = () => {
+    const a = document.createElement("a");
+    a.href = image;
+    a.download = "download";
+
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  const onChange = (e) => {
+    SetInstaName(e.target.value);
+  }
+
   return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>src/app/page.js</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div className={styles.main}>
+      <div className={styles.container}>
+        <div className={styles.InstallDiv}>
+          <h3>앱 설치 방법 (모바일)</h3>
+          <p>아이폰: 사파리 접속 -&gt; 공유 아이콘 클릭 -&gt; 홈 화면에 추가</p>
+          <p>안드로이드: 크롬 접속 -&gt; 브라우저 우측 메뉴 -&gt; 앱 설치</p>
+        </div>
+        <div className={styles.ImageContainer}
+          onClick={() => fileInput.current.click()}
+        >
+          <Image
+            className={styles.img}
+            src={image}
+            alt="preview"
+            layout="responsive"
+            priority
+            width={500}
+            height={500}
+          />
+          {/* <h1 className={styles.H1}>Upload</h1> */}
+        </div>
+        <input className={styles.InstaNameInput} onChange={onChange} value={InstaName} placeholder="Instragram ID" />
+        {IsImgSeleected && (
+          ShowDownloadBtn ?
+          <div className={styles.DownloadDiv}>
+            <button className={styles.DownloadBtn} onClick={DownloadImage}>다운로드</button>
+            <button className={styles.ReloadBtn} onClick={() => window.location.reload()}>다시 시도</button>
+          </div>
+          :
+          <button className={styles.UploadBtn} onClick={() => handleImage(file)}>업로드</button>
+        )}
+        <div className={styles.filebox}>
+          <input
+            type="file"
+            className={styles.file}
+            id="file"
+            ref={fileInput}
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                const file = e.target.files[0];
+                Setfile(file);
+                URL.revokeObjectURL(image);
+                setImage((_pre) => URL.createObjectURL(file));
+                SetImgSelected(true);
+              }
+            }}
+          />
         </div>
       </div>
-
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+    </div>
   );
 }
