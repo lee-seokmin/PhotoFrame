@@ -3,7 +3,6 @@
 import Image from "next/image";
 import styles from "./page.module.css";
 import { useState, useRef } from "react";
-import { Spinner } from "@nextui-org/react";
 import blank from '../../public/blank.jpg';
 
 export default function Home() {
