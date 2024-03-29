@@ -3,6 +3,7 @@
 import Image from "next/image";
 import styles from "./page.module.css";
 import { useState, useRef } from "react";
+import { Spinner } from "@nextui-org/react";
 import blank from '../../public/blank.jpg';
 
 export default function Home() {
@@ -10,7 +11,8 @@ export default function Home() {
   const [InstaName, SetInstaName] = useState('');
   const [IsImgSeleected, SetImgSelected] = useState(false);
   const [ShowDownloadBtn, SetShowDownloadBtn] = useState(false);
-  const [file, Setfile]= useState();
+  const [file, Setfile] = useState();
+  const [IsLoading, SetLoading] = useState(false);
 
   const fileInput = useRef(null);
 
@@ -23,6 +25,7 @@ export default function Home() {
       formData.append('image', file);
 
       try {
+        SetLoading(true);
         await fetch('http://127.0.0.1:8000/image', {
           method: 'POST',
           body: formData,
@@ -30,15 +33,17 @@ export default function Home() {
           .then(res => res.json())
           .then(res => {
             console.log(res);
-            if(res['status'] == "fail") {
+            if (res['status'] == "fail") {
               alert('메타 데이터를 찾지 못했습니다. 다른 사진으로 다시 시도해주세요.');
-            } else if(res['status'] == "success") {
+            } else if (res['status'] == "success") {
               setImage(`data:image/jpeg;base64,${res['base64']}`);
               SetShowDownloadBtn(true);
             }
           })
       } catch (error) {
         console.log(error);
+      } finally {
+        SetLoading(false);
       }
     }
   }
@@ -77,17 +82,22 @@ export default function Home() {
             width={500}
             height={500}
           />
-          {/* <h1 className={styles.H1}>Upload</h1> */}
         </div>
         <input className={styles.InstaNameInput} onChange={onChange} value={InstaName} placeholder="Instragram ID" />
         {IsImgSeleected && (
           ShowDownloadBtn ?
-          <div className={styles.DownloadDiv}>
-            <button className={styles.DownloadBtn} onClick={DownloadImage}>다운로드</button>
-            <button className={styles.ReloadBtn} onClick={() => window.location.reload()}>다시 시도</button>
-          </div>
-          :
-          <button className={styles.UploadBtn} onClick={() => handleImage(file)}>업로드</button>
+            <div className={styles.DownloadDiv}>
+              <button className={styles.DownloadBtn} onClick={DownloadImage}>다운로드</button>
+              <button className={styles.ReloadBtn} onClick={() => window.location.reload()}>다시 시도</button>
+            </div>
+            :
+            <button className={styles.UploadBtn} onClick={() => handleImage(file)}>
+              {
+                IsLoading ?
+                  <p>Loading...</p>
+                  : <p>업로드</p>
+              }
+            </button>
         )}
         <div className={styles.filebox}>
           <input
