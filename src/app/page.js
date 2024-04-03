@@ -4,6 +4,7 @@ import Image from "next/image";
 import styles from "./page.module.css";
 import { useState, useRef } from "react";
 import blank from '../../public/blank.jpg';
+import { FaGithubSquare } from "react-icons/fa";
 
 export default function Home() {
   const [image, setImage] = useState(blank);
@@ -68,6 +69,11 @@ export default function Home() {
           <h3>앱 설치 방법 (모바일)</h3>
           <p>아이폰: 사파리 접속 -&gt; 공유 아이콘 클릭 -&gt; 홈 화면에 추가</p>
           <p>안드로이드: 크롬 접속 -&gt; 브라우저 우측 메뉴 -&gt; 앱 설치</p>
+          <br/>
+          <div className={styles.Copyright}>
+            <span>Copyright © 2024 이석민. All rights Reserved.</span>
+            <a href="https://github.com/seokmin12/PhotoFrame" target="_blank"><FaGithubSquare size={16} /></a>
+          </div>
         </div>
         <div className={styles.ImageContainer}
           onClick={() => fileInput.current.click()}
