@@ -26,13 +26,12 @@ export default function Home() {
 
       try {
         SetLoading(true);
-        await fetch('http://127.0.0.1:8000/image', {
+        await fetch('https://photoframe.onrender.com/image', {
           method: 'POST',
           body: formData,
         })
           .then(res => res.json())
           .then(res => {
-            console.log(res);
             if (res['status'] == "fail") {
               alert('메타 데이터를 찾지 못했습니다. 다른 사진으로 다시 시도해주세요.');
             } else if (res['status'] == "success") {
@@ -69,7 +68,7 @@ export default function Home() {
           <h3>앱 설치 방법 (모바일)</h3>
           <p>아이폰: 사파리 접속 -&gt; 공유 아이콘 클릭 -&gt; 홈 화면에 추가</p>
           <p>안드로이드: 크롬 접속 -&gt; 브라우저 우측 메뉴 -&gt; 앱 설치</p>
-          <br/>
+          <br />
           <div className={styles.Copyright}>
             <span>Copyright © 2024 이석민. All rights Reserved.</span>
             <a href="https://github.com/seokmin12/PhotoFrame" target="_blank"><FaGithubSquare size={16} /></a>
