@@ -1,6 +1,7 @@
 import base64
 
 from fastapi import FastAPI, UploadFile, Form, File, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 
@@ -10,6 +11,17 @@ import numpy as np
 import cv2
 
 app = FastAPI()
+
+
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def image_edit(photog, image, filename):
