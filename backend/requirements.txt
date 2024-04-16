@@ -47,3 +47,4 @@ watchfiles
 websockets
 Werkzeug
 wsproto
+mangum
