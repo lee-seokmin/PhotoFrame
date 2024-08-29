@@ -27,12 +27,12 @@ def image_edit(photog, image, filename):
     frame_h, frame_w = 1350, 1080
     h, w, c = img.shape
     if h > w:  # 세로 사진
-        n_w = round(1080 / 1.6)
+        n_w = round(1080 / 1.45)
         x = round((frame_w // 2) - (n_w // 2))
         y = 70
         n_h = round((h / w) * n_w)
     else:  # 가로 사진
-        n_w = round(1080 / 1.4)
+        n_w = round(1080 / 1.05)
         x = round((frame_w // 2) - (n_w // 2))
         y = 200
         n_h = round((h / w) * n_w)
@@ -66,7 +66,7 @@ def image_edit(photog, image, filename):
     # return white_background
 
 
-# path = '/Users/seokmin/Library/Mobile Documents/com~apple~CloudDocs/사진 기록/보정된 사진/2024:03:13/*.jpg'
-#
-# for img in glob.glob(path):
-#     image_edit('_znkvz', img)
+path = './photo/hori.jpg'
+
+for img in glob.glob(path):
+    image_edit('_znkvz', img, "1.jpg")
