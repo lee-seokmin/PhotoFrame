@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 이 웹사이트는 [Next.js](https://nextjs.org/)를 사용해 만들어졌습니다.
 
 ## 이 사이트를 만든 목적
@@ -10,13 +9,6 @@
 ## Getting Started
 
 먼저, 로컬 서버에서 다음의 커맨드를 실행한다:
-=======
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
->>>>>>> 72d1a71 (Next Js 15 업데이트)
 
 ```bash
 npm run dev
@@ -28,47 +20,67 @@ pnpm dev
 bun dev
 ```
 
-<<<<<<< HEAD
 로컬 주소 [http://localhost:3000](http://localhost:3000)에 접속하여 결과물을 확인한다.
 
-## 주요 Python 코드
+## 주요 코드
 
-```python
-meta_data_list = ['Model', 'ExposureTime', 'ISOSpeedRatings', 'FNumber']
-meta_data = {}
-
-
-def get_image_exif(image):
-    img = Image.open(image)
-
-    img_info = img._getexif()
-    for tag_id in img_info:
-        tag = TAGS.get(tag_id, tag_id)
-        data = img_info.get(tag_id)
-        if tag in meta_data_list:
-            meta_data[tag] = data
-    img.close()
-
-            ⋮
-
-frame_h, frame_w = 1350, 1080
-h, w, c = img.shape
-if h > w:  # 세로 사진
-    n_w = round(1080 / 1.6)
-    x = round((frame_w // 2) - (n_w // 2))
-    y = 70
-    n_h = round((h / w) * n_w)
-else:  # 가로 사진
-    n_w = round(1080 / 1.4)
-    x = round((frame_w // 2) - (n_w // 2))
-    y = 200
-    n_h = round((h / w) * n_w)
-
-white_background = np.zeros((frame_h, frame_w, 3), np.uint8)
-white_background.fill(255)
-
-new_img = cv2.resize(img, (n_w, n_h))
-white_background[y:y + n_h, x:x + n_w, :] = new_img
+```typescript
+function setupCanvas(imgWidth: number, imgHeight: number, padding: number, metadataHeight: number): {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  canvasWidth: number;
+  canvasHeight: number;
+  scaledImgWidth: number;
+  scaledImgHeight: number;
+  imgX: number;
+  imgY: number;
+} {
+  // 고정 캔버스 크기
+  const canvasWidth = 1080 * 2;
+  const canvasHeight = 1350 * 2;
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+  
+  // 배경 설정
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  
+  // 이미지 크기 계산 (캔버스에 맞게 스케일링)
+  const imageArea = canvasHeight - (padding * 5) - metadataHeight;
+  const scale = Math.min(
+    (canvasWidth - padding * 2) / imgWidth,
+    imageArea / imgHeight
+  );
+  
+  const scaledImgWidth = imgWidth * scale;
+  const scaledImgHeight = imgHeight * scale;
+  
+  // 이미지 위치 계산 (가로 및 세로 중앙 정렬)
+  const imgX = (canvasWidth - scaledImgWidth) / 2;
+  
+  // 가로 이미지(landscape)인 경우 수직 중앙 정렬
+  let imgY = padding * 2;
+  if (imgWidth > imgHeight) {
+    // 가로 이미지면 수직으로도 중앙에 배치
+    imgY = (canvasHeight - metadataHeight - scaledImgHeight) / 2;
+  }
+  
+  return {
+    canvas,
+    ctx,
+    canvasWidth,
+    canvasHeight,
+    scaledImgWidth,
+    scaledImgHeight,
+    imgX,
+    imgY
+  };
+}
 ```
 
 ## 로직
@@ -77,7 +89,7 @@ white_background[y:y + n_h, x:x + n_w, :] = new_img
 flowchart LR
     A(프론트엔드)
     B[사진의 메타 데이터 가져오기]
-    C[numpy를 이용하여
+    C[canvas를 이용하여
     흰 배경 만들기]
     D[원본 사진을 일정한 
     비율에 맞춰 resize하기]
@@ -91,25 +103,3 @@ flowchart LR
     E ---> |생성된 이미지를 base64로 
     인코딩하여 return하기| A
 ```
-=======
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
->>>>>>> 72d1a71 (Next Js 15 업데이트)
