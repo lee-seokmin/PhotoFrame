@@ -3,8 +3,17 @@
 # dependencies
 /node_modules
 /.pnp
+<<<<<<< HEAD
 .pnp.js
 .yarn/install-state.gz
+=======
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+>>>>>>> 72d1a71 (Next Js 15 업데이트)
 
 # testing
 /coverage
@@ -24,9 +33,16 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+<<<<<<< HEAD
 
 # local env files
 .env*.local
+=======
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+>>>>>>> 72d1a71 (Next Js 15 업데이트)
 
 # vercel
 .vercel
@@ -34,6 +50,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+<<<<<<< HEAD
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,venv
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,venv
@@ -228,3 +245,5 @@ pip-selfcheck.json
 # python
 backend/.space
 backend/dependencies
+=======
+>>>>>>> 72d1a71 (Next Js 15 업데이트)
