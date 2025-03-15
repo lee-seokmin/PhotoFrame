@@ -37,9 +37,37 @@ a {
   }
 }
 
+html, body {
+  height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+<<<<<<< HEAD
 >>>>>>> 72d1a71 (Next Js 15 업데이트)
+=======
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.3s ease-out forwards;
+>>>>>>> 11c681a (favicon 적용)
 }
