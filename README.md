@@ -1,5 +1,9 @@
 이 웹사이트는 [Next.js](https://nextjs.org/)를 사용해 만들어졌습니다.
 
+<br>
+
+[![Netlify Status](https://api.netlify.com/api/v1/badges/7913246e-2b44-4772-9f57-2f4119fa43a4/deploy-status)](https://app.netlify.com/sites/photoframeo/deploys)
+
 ## 이 사이트를 만든 목적
 
 인스타그램에 자신이 찍은 사진을 올릴 때, 원본 그대로 올리는 것 보다 그 사진의 [EXIF](https://namu.wiki/w/EXIF)(셔터 스피드, 조리개 값, ISO등)를 입력해 놓음으로써 사람들이 정보를 알 수 있게 되는 프레임을 만드는 것이 유행이다.  
