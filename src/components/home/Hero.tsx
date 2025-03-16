@@ -17,7 +17,7 @@ export default function Hero() {
         </p>
       </div>
       
-      <div className="w-full md:w-1/2 bg-white dark:bg-slate-800 p-4 sm:p-8 rounded-2xl shadow-xl overflow-y-auto max-h-[80vh]">
+      <div className="w-full md:w-1/2 bg-white dark:bg-slate-800 p-4 sm:p-8 rounded-2xl shadow-xl overflow-y-auto">
         <div className="aspect-square relative overflow-hidden rounded-xl border-4 border-white dark:border-slate-700 shadow-inner flex">
           <PhotoUpload />
         </div>
