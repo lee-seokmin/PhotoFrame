@@ -52,6 +52,7 @@ const translations: Record<Language, TranslationRecord> = {
     'status.error.generic': 'An error occurred. Please try again.',
     'status.error.upload': 'Error uploading image. Please try a different file.',
     'status.error.metadata': 'Could not extract metadata from image.',
+    'status.error.instagram' : 'Please enter your Instagram username.',
     
     // Photo Upload
     'photo.drag': 'Drag and drop your photo here',
@@ -106,6 +107,7 @@ const translations: Record<Language, TranslationRecord> = {
     'status.error.generic': '오류가 발생했습니다. 다시 시도해 주세요.',
     'status.error.upload': '이미지 업로드 오류. 다른 파일을 시도해 주세요.',
     'status.error.metadata': '이미지에서 메타데이터를 추출할 수 없습니다.',
+    'status.error.instagram': '인스타그램 사용자 이름을 입력해주세요.',
     
     // Photo Upload
     'photo.drag': '여기에 사진을 드래그하여 놓으세요',
