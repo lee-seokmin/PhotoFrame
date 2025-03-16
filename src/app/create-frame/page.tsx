@@ -61,7 +61,7 @@ export default function CreateFramePage() {
     }
     
     if (!instagramUsername.trim()) {
-      setError('인스타그램 사용자 이름을 입력해주세요');
+      setError(t('status.error.instagram'));
       return;
     }
 
