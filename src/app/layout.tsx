@@ -14,11 +14,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// 기본 URL 설정
+const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
 export const metadata: Metadata = {
   title: "PhotoFrame",
   description: "Automatic Metadata Extraction",
   icons: {
     icon: "/logo/favicon.ico",
+  },
+  // RSS 피드 및 기타 메타데이터 링크 추가
+  alternates: {
+    types: {
+      'application/rss+xml': `${baseUrl}/rss.xml`,
+    },
   },
 };
 
