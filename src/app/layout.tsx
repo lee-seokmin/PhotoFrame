@@ -23,6 +23,14 @@ export const metadata: Metadata = {
   icons: {
     icon: "/logo/favicon.ico",
   },
+  openGraph: {
+    title: "PhotoFrame",
+    description: "Automatic Metadata Extraction",
+    url: baseUrl,
+    siteName: "PhotoFrame",
+    type: "website",
+    locale: "ko",
+  },
   // RSS 피드 및 기타 메타데이터 링크 추가
   alternates: {
     types: {
