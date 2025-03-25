@@ -153,7 +153,7 @@ export default function FullScreenImageViewer({
             alt={`Full Screen - ${alt}`}
             width={1200}
             height={800}
-            className="rounded-lg shadow-2xl transition-transform duration-200"
+            className="shadow-2xl transition-transform duration-200"
             style={{ 
               transform: `scale(${scale})`,
               objectFit: 'contain',

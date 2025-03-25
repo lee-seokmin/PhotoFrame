@@ -18,7 +18,7 @@ export default function FramedImagePreview({ imageUrl, alt = 'Framed Photo' }: F
     <>
       <div className="relative flex flex-col items-center justify-center w-full max-w-xs mx-auto">
         <div 
-          className="w-full rounded-xl overflow-hidden cursor-pointer shadow-md"
+          className="w-full overflow-hidden cursor-pointer shadow-md"
           onClick={() => setIsFullScreen(true)}
         >
           <Image 
