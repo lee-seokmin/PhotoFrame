@@ -6,6 +6,7 @@ export interface PhotoMetadata {
   FNumber: number | null;
   FocalLength: number | null;
   DateTimeOriginal: string | null;
+  LensModel: string | null;
 }
 
 export interface ImageData {

@@ -14,7 +14,8 @@ const metadataLabels: Record<string, string> = {
   ISO: 'ISO',
   FNumber: '조리개 값',
   FocalLength: '초점 거리',
-  DateTimeOriginal: '촬영 일시'
+  DateTimeOriginal: '촬영 일시',
+  LensModel: '렌즈 모델'
 };
 
 export default function MetadataDisplay({ metadata }: MetadataDisplayProps) {

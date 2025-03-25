@@ -1,4 +1,3 @@
-// pages/api/upload.js
 import { NextRequest, NextResponse } from 'next/server';
 import exifr from 'exifr';
 
@@ -27,7 +26,8 @@ export async function POST(request: NextRequest) {
       ISO: metadata?.ISO || null,
       FNumber: metadata?.FNumber || null,
       FocalLength: metadata?.FocalLength || null,
-      DateTimeOriginal: metadata?.DateTimeOriginal || null
+      DateTimeOriginal: metadata?.DateTimeOriginal || null,
+      LensModel: metadata?.LensModel || null
     };
     
     // Create a base64 representation of the image for frontend use
