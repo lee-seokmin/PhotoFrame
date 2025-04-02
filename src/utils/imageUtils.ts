@@ -14,21 +14,8 @@ function setupCanvas(imgWidth: number, imgHeight: number, padding: number, metad
   imgY: number;
 } {
   // 캔버스 비율을 4:5 (가로:세로)로 고정
-  let canvasWidth = imgWidth + (padding * 2);
-  let canvasHeight = imgHeight + metadataHeight + (padding * 3);
-  
-  // 4:5 비율 적용
-  const targetAspectRatio = 4 / 5; // 0.8 (가로:세로 = 4:5)
-  const currentAspectRatio = canvasWidth / canvasHeight;
-  
-  // 비율 조정
-  if (currentAspectRatio > targetAspectRatio) {
-    // 너무 가로로 긴 경우 - 높이 늘리기
-    canvasHeight = Math.ceil(canvasWidth / targetAspectRatio);
-  } else if (currentAspectRatio < targetAspectRatio) {
-    // 너무 세로로 긴 경우 - 너비 늘리기
-    canvasWidth = Math.ceil(canvasHeight * targetAspectRatio);
-  }
+  const canvasWidth = imgWidth + (padding * 2);
+  const canvasHeight = imgHeight + metadataHeight + (padding * 2);
   
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth;
@@ -57,6 +44,121 @@ function setupCanvas(imgWidth: number, imgHeight: number, padding: number, metad
     imgX,
     imgY
   };
+}
+
+/**
+ * 뒷배경이될 블러 이미지 생성 (모바일 호환성 개선)
+ */
+function createBlurImage(img: HTMLImageElement): {
+  blurImageCanvas: HTMLCanvasElement;
+  blurImageCtx: CanvasRenderingContext2D;
+} {
+  const targetWidth = Math.min(2160, window.innerWidth * 2);
+  const targetHeight = Math.min(2700, window.innerHeight * 2);
+  
+  // Create a canvas for the downsized image (downsampling helps with blur effect)
+  const smallCanvas = document.createElement('canvas');
+  const downscaleFactor = 0.25; // Reduce to 25% for better performance
+  smallCanvas.width = targetWidth * downscaleFactor;
+  smallCanvas.height = targetHeight * downscaleFactor;
+  
+  const smallCtx = smallCanvas.getContext('2d');
+  if (!smallCtx) throw new Error('Could not get canvas context');
+  
+  // Draw the original image to the small canvas
+  smallCtx.drawImage(img, 0, 0, smallCanvas.width, smallCanvas.height);
+  
+  // Create the final canvas for the blurred result
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = targetWidth;
+  finalCanvas.height = targetHeight;
+  
+  const finalCtx = finalCanvas.getContext('2d');
+  if (!finalCtx) throw new Error('Could not get canvas context');
+  
+  // Draw the downsampled image back to the full-size canvas (this creates a blur-like effect)
+  finalCtx.drawImage(smallCanvas, 0, 0, targetWidth, targetHeight);
+  
+  // Apply multiple passes of box blur for smoother results (works on all devices)
+  const iterations = 3;
+  for (let i = 0; i < iterations; i++) {
+    applyBoxBlur(finalCanvas, finalCtx, 8);
+  }
+  
+  return {
+    blurImageCanvas: finalCanvas,
+    blurImageCtx: finalCtx
+  };
+}
+
+/**
+ * 박스 블러 알고리즘 구현 (CSS filter 대신 사용)
+ */
+function applyBoxBlur(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, radius: number): void {
+  const width = canvas.width;
+  const height = canvas.height;
+  
+  // Get image data
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const pixels = imgData.data;
+  const tempImgData = ctx.createImageData(width, height);
+  const tempPixels = tempImgData.data;
+  
+  // Horizontal pass
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let r = 0, g = 0, b = 0, a = 0, count = 0;
+      
+      // Sum the surrounding pixels
+      for (let i = Math.max(0, x - radius); i < Math.min(width, x + radius + 1); i++) {
+        const idx = (y * width + i) * 4;
+        r += pixels[idx];
+        g += pixels[idx + 1];
+        b += pixels[idx + 2];
+        a += pixels[idx + 3];
+        count++;
+      }
+      
+      // Average and set
+      const outIdx = (y * width + x) * 4;
+      tempPixels[outIdx] = r / count;
+      tempPixels[outIdx + 1] = g / count;
+      tempPixels[outIdx + 2] = b / count;
+      tempPixels[outIdx + 3] = a / count;
+    }
+  }
+  
+  // Copy temp data for vertical pass
+  for (let i = 0; i < pixels.length; i++) {
+    pixels[i] = tempPixels[i];
+  }
+  
+  // Vertical pass
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      let r = 0, g = 0, b = 0, a = 0, count = 0;
+      
+      // Sum the surrounding pixels
+      for (let j = Math.max(0, y - radius); j < Math.min(height, y + radius + 1); j++) {
+        const idx = (j * width + x) * 4;
+        r += pixels[idx];
+        g += pixels[idx + 1];
+        b += pixels[idx + 2];
+        a += pixels[idx + 3];
+        count++;
+      }
+      
+      // Average and set
+      const outIdx = (y * width + x) * 4;
+      tempPixels[outIdx] = r / count;
+      tempPixels[outIdx + 1] = g / count;
+      tempPixels[outIdx + 2] = b / count;
+      tempPixels[outIdx + 3] = a / count;
+    }
+  }
+  
+  // Put the blurred data back
+  ctx.putImageData(tempImgData, 0, 0);
 }
 
 /**
@@ -214,6 +316,9 @@ export async function createPhotoFrame(
     const padding = 50;
     const metadataHeight = 150;
     
+    // 블러 이미지 생성 - 모바일에서도 작동하는 개선된 방식
+    const { blurImageCanvas } = createBlurImage(img);
+
     // 캔버스 설정
     const { canvas, ctx, canvasWidth, scaledImgWidth, scaledImgHeight, imgX, imgY } = setupCanvas(
       imgWidth, 
@@ -221,11 +326,13 @@ export async function createPhotoFrame(
       padding, 
       metadataHeight
     );
+
     
     // 이미지 그리기
     ctx.drawImage(img, imgX, imgY, scaledImgWidth, scaledImgHeight);
-    
+
     // 메타데이터 표시 데이터 준비
+
     const { leftData, leftDateData, rightData } = prepareDisplayData(metadata);
     
     // 사용자명 준비
@@ -234,7 +341,32 @@ export async function createPhotoFrame(
     // 메타데이터 및 사용자명 렌더링
     renderMetadata(ctx, leftData, leftDateData, rightData, username, canvasWidth, imgY, scaledImgHeight, padding, imgX, scaledImgWidth);
 
-    return canvas.toDataURL('image/jpeg', 0.95);
+
+    const final_canvas = document.createElement('canvas');
+    final_canvas.width = 2160;
+    final_canvas.height = 2700;
+
+    const final_ctx = final_canvas.getContext('2d');
+    if (!final_ctx) throw new Error('Could not get canvas context');
+
+    // Draw the blurred background first
+    final_ctx.drawImage(blurImageCanvas, 0, 0, 2160, 2700);
+
+    // Calculate the aspect ratio of the original canvas
+    const canvasAspectRatio = canvas.width / canvas.height;
+    
+    // Make the canvas smaller (80% of the blurImageCanvas width)
+    const newWidth = Math.round(2160 * 0.78);
+    const newHeight = Math.round(newWidth / canvasAspectRatio);
+    
+    // Calculate position to center the canvas
+    const centerX = Math.round((2160 - newWidth) / 2);
+    const centerY = Math.round((2700 - newHeight) / 2);
+    
+    // Draw the original canvas centered and scaled
+    final_ctx.drawImage(canvas, centerX, centerY, newWidth, newHeight);
+
+    return final_canvas.toDataURL('image/jpeg', 0.95);
   } catch (err) {
     console.error('Error creating photo frame:', err);
     throw new Error('Failed to create photo frame');
