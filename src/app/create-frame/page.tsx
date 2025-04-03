@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import StatusMessage from '@/components/StatusMessage';
@@ -10,49 +9,30 @@ import InstagramUsernameInput from '@/components/InstagramUsernameInput';
 import { createPhotoFrame } from '@/utils/imageUtils';
 import FramedImagePreview from '@/components/FramedImagePreview';
 import ResultActions from '@/components/ResultActions';
-import { PhotoMetadata } from '@/types/photo';
 import FullScreenImageViewer from '@/components/FullScreenImageViewer';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { usePhoto } from '@/contexts/PhotoContext';
 
 export default function CreateFramePage() {
   const router = useRouter();
   const { t } = useLanguage();
+  const { imageDataUrl, fileName, metadata, clearPhotoData } = usePhoto();
   
   const [instagramUsername, setInstagramUsername] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [framedImage, setFramedImage] = useState<string | null>(null);
   const [generatingFrame, setGeneratingFrame] = useState(false);
   
-  // Image data state
-  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [metadata, setMetadata] = useState<PhotoMetadata | null>(null);
-  
   // Full screen viewer state
   const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
   
-  // Load data from localStorage on component mount
+  // Check if we have the necessary data on component mount
   useEffect(() => {
-    // Get data from localStorage
-    const storedImageDataUrl = localStorage.getItem('photoFrame_imageDataUrl');
-    const storedFileName = localStorage.getItem('photoFrame_fileName');
-    const storedMetadata = localStorage.getItem('photoFrame_metadata');
-    
-    if (storedImageDataUrl && storedFileName && storedMetadata) {
-      setImageDataUrl(storedImageDataUrl);
-      setFileName(storedFileName);
-      try {
-        setMetadata(JSON.parse(storedMetadata));
-      } catch (err) {
-        console.error('Failed to parse metadata:', err);
-        setError('메타데이터 처리 중 오류가 발생했습니다.');
-        router.push('/');
-      }
-    } else {
+    if (!imageDataUrl || !fileName || !metadata) {
       // If data is missing, redirect back to home
       router.push('/');
     }
-  }, [router]);
+  }, [imageDataUrl, fileName, metadata, router]);
   
   const handleCreateFrame = async () => {
     if (!imageDataUrl || !metadata) {
@@ -80,10 +60,8 @@ export default function CreateFramePage() {
   };
   
   const handleGoBack = () => {
-    // Clear localStorage and go back to homepage
-    localStorage.removeItem('photoFrame_imageDataUrl');
-    localStorage.removeItem('photoFrame_fileName');
-    localStorage.removeItem('photoFrame_metadata');
+    // Clear context data and go back to homepage
+    clearPhotoData();
     router.push('/');
   };
 
@@ -106,43 +84,37 @@ export default function CreateFramePage() {
 
           {generatingFrame && <div className="mb-3 sm:mb-4"><StatusMessage type="loading" message={t('status.generating')} /></div>}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
-            <div>
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="flex-1">
               {imageDataUrl && (
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="relative overflow-hidden rounded-xl border-2 border-slate-200 dark:border-slate-700">
-                    <Image
-                      src={imageDataUrl}
-                      alt="Original photo"
-                      width={600}
-                      height={600}
-                      className="object-contain w-full aspect-square bg-slate-100 dark:bg-slate-800"
+                <div className="space-y-4">
+                  <div 
+                    className="relative cursor-pointer"
+                    onClick={() => setIsFullScreenOpen(true)}
+                  >
+                    <FramedImagePreview 
+                      imageUrl={imageDataUrl}
+                      alt={fileName || 'Original photo'}
                     />
-                    <button 
-                      className="absolute top-2 right-2 p-2 bg-white/80 dark:bg-black/50 rounded-md touch-manipulation"
-                      onClick={() => setIsFullScreenOpen(true)}
-                      aria-label="View fullscreen"
+                  </div>
+                  
+                  {/* Username input and generate button */}
+                  <div className="space-y-4">
+                    <InstagramUsernameInput
+                      value={instagramUsername}
+                      onChange={setInstagramUsername}
+                      label={t('create.username.label')}
+                      placeholder={t('create.username.placeholder')}
+                    />
+
+                    <button
+                      onClick={handleCreateFrame}
+                      disabled={generatingFrame}
+                      className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed text-base sm:text-lg min-h-[48px] touch-manipulation"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-                      </svg>
+                      {t('create.generate.button')}
                     </button>
                   </div>
-
-                  <InstagramUsernameInput 
-                    value={instagramUsername}
-                    onChange={setInstagramUsername}
-                    label={t('create.username.label')}
-                    placeholder={t('create.username.placeholder')}
-                  />
-
-                  <button
-                    onClick={handleCreateFrame}
-                    disabled={generatingFrame}
-                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed text-base sm:text-lg min-h-[48px] touch-manipulation"
-                  >
-                    {t('create.generate.button')}
-                  </button>
                 </div>
               )}
             </div>

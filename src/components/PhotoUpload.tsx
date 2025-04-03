@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PhotoDropZone from '@/components/PhotoDropZone';
 import StatusMessage from '@/components/StatusMessage';
+import { usePhoto } from '@/contexts/PhotoContext';
 
 export default function PhotoUpload() {
   const router = useRouter();
+  const { setPhotoData } = usePhoto();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -34,12 +36,14 @@ export default function PhotoUpload() {
 
       const data = await response.json();
       
-      // Store image data in localStorage instead of URL parameters
-      localStorage.setItem('photoFrame_imageDataUrl', data.imageData.dataUrl);
-      localStorage.setItem('photoFrame_fileName', selectedFile.name);
-      localStorage.setItem('photoFrame_metadata', JSON.stringify(data.filteredMetadata));
+      // Store image data in context instead of localStorage
+      setPhotoData(
+        data.imageData.dataUrl,
+        selectedFile.name,
+        data.filteredMetadata
+      );
       
-      // Redirect to the create-frame page without large data in URL
+      // Redirect to the create-frame page
       router.push('/create-frame');
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다');

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import GoogleAnalytics from "@/lib/GoogleAnalytics";
 import "./globals.css";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { PhotoProvider } from "@/contexts/PhotoContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -54,7 +55,9 @@ export default function RootLayout({
           <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS} />
         ) : null}
         <LanguageProvider>
-          {children}
+          <PhotoProvider>
+            {children}
+          </PhotoProvider>
         </LanguageProvider>
       </body>
     </html>
