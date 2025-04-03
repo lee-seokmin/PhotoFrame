@@ -332,7 +332,6 @@ export async function createPhotoFrame(
     ctx.drawImage(img, imgX, imgY, scaledImgWidth, scaledImgHeight);
 
     // 메타데이터 표시 데이터 준비
-
     const { leftData, leftDateData, rightData } = prepareDisplayData(metadata);
     
     // 사용자명 준비
@@ -355,9 +354,22 @@ export async function createPhotoFrame(
     // Calculate the aspect ratio of the original canvas
     const canvasAspectRatio = canvas.width / canvas.height;
     
-    // Make the canvas smaller (80% of the blurImageCanvas width)
-    const newWidth = Math.round(2160 * 0.78);
-    const newHeight = Math.round(newWidth / canvasAspectRatio);
+    // Calculate dimensions that fit within the final canvas
+    // Use 80% of available space as maximum size
+    const maxWidth = Math.round(2160 * 0.95);
+    const maxHeight = Math.round(2700 * 0.95);
+    
+    // Determine which dimension is more constraining
+    let newWidth, newHeight;
+    if (canvasAspectRatio > maxWidth / maxHeight) {
+      // Width is the constraining factor
+      newWidth = maxWidth;
+      newHeight = Math.round(newWidth / canvasAspectRatio);
+    } else {
+      // Height is the constraining factor
+      newHeight = maxHeight;
+      newWidth = Math.round(newHeight * canvasAspectRatio);
+    }
     
     // Calculate position to center the canvas
     const centerX = Math.round((2160 - newWidth) / 2);
