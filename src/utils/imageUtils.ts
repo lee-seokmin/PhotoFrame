@@ -238,7 +238,7 @@ function renderMetadata(
 ): void {
   // 폰트 설정
   ctx.fillStyle = 'black';
-  ctx.font = '60px "Montserrat", "Open Sans", sans-serif';
+  ctx.font = '50px "Montserrat", "Open Sans", sans-serif';
   
   const spacing = 40; // 각 항목 사이의 간격
   const textY = imgTop + imgHeight + padding + 30; // 이미지 끝에서 패딩만큼 떨어진 위치
