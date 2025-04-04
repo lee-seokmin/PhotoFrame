@@ -6,8 +6,8 @@ import { useDragAndDrop } from '@/hooks/useDragAndDrop';
 import { PreviewContainer } from '@/components/preview/PreviewContainer';
 import { DropzoneContainer } from '@/components/preview/DropzoneContainer';
 
-// 최대 파일 크기 (30MB)
-const MAX_FILE_SIZE = 30 * 1024 * 1024;
+// 최대 파일 크기 (50MB)
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 interface PhotoDropZoneProps {
   onFileSelect: (file: File) => void;

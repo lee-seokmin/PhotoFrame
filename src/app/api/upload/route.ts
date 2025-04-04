@@ -16,10 +16,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 파일 크기 제한 확인 (서버에서도 이중으로 체크)
-    const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: '파일 크기가 너무 큽니다. 최대 30MB까지 업로드 가능합니다.' },
+        { error: '파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다.' },
         { status: 413 }
       );
     }

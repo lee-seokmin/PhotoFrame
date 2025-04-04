@@ -22,7 +22,7 @@ export default function PhotoUpload() {
   const compressImage = (file: File, quality = 0.7): Promise<File> => {
     return new Promise((resolve) => {
       // First check if the file is too large or in an unsuitable format
-      if (file.size > 30 * 1024 * 1024) {
+      if (file.size > 50 * 1024 * 1024) {
         console.warn('File very large, using original file as fallback');
         resolve(file); // Use original file as fallback for very large files
         return;
