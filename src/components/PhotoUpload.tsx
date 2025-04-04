@@ -20,53 +20,86 @@ export default function PhotoUpload() {
    * @returns Promise resolving to a compressed File object
    */
   const compressImage = (file: File, quality = 0.7): Promise<File> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      // First check if the file is too large or in an unsuitable format
+      if (file.size > 30 * 1024 * 1024) {
+        console.warn('File very large, using original file as fallback');
+        resolve(file); // Use original file as fallback for very large files
+        return;
+      }
+      
       const img = new Image();
       img.src = URL.createObjectURL(file);
       
       img.onload = () => {
-        // Create canvas with the same dimensions as the image
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        
-        // Draw image on canvas
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas context not available'));
-          return;
-        }
-        
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-        
-        // Convert to blob with reduced quality
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error('Blob conversion failed'));
-              return;
-            }
-            
-            // Create a new File from the blob
-            const compressedFile = new File([blob], file.name, {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            
-            // Clean up object URL
+        try {
+          // Create canvas with the same dimensions as the image
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          
+          // Draw image on canvas
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            console.warn('Canvas context not available, using original file');
             URL.revokeObjectURL(img.src);
-            
-            resolve(compressedFile);
-          },
-          'image/jpeg',
-          quality
-        );
+            resolve(file); // Fallback to original file
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, img.width, img.height);
+          
+          // Convert to blob with reduced quality
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                console.warn('Blob conversion failed, using original file');
+                URL.revokeObjectURL(img.src);
+                resolve(file); // Fallback to original file
+                return;
+              }
+              
+              // Verify the blob is valid
+              if (blob.size === 0) {
+                console.warn('Generated blob has zero size, using original file');
+                URL.revokeObjectURL(img.src);
+                resolve(file); // Fallback to original file
+                return;
+              }
+              
+              // Create a new File from the blob
+              const compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              
+              // Clean up object URL
+              URL.revokeObjectURL(img.src);
+              
+              resolve(compressedFile);
+            },
+            'image/jpeg',
+            quality
+          );
+        } catch (err) {
+          console.error('Error during image compression:', err);
+          URL.revokeObjectURL(img.src);
+          resolve(file); // Fallback to original file in case of any error
+        }
       };
       
       img.onerror = () => {
+        console.warn('Image loading failed, using original file');
         URL.revokeObjectURL(img.src);
-        reject(new Error('Image loading failed'));
+        resolve(file); // Fallback to original file
       };
+      
+      // Add timeout in case the image loading hangs
+      setTimeout(() => {
+        console.warn('Image processing timed out, using original file');
+        URL.revokeObjectURL(img.src);
+        resolve(file); // Fallback to original file after timeout
+      }, 10000); // 10 second timeout
     });
   };
 

@@ -45,25 +45,40 @@ export async function POST(request: NextRequest) {
       let compressedImageBuffer;
       try {
         compressedImageBuffer = await compressImage(Buffer.from(buffer), file.type);
+        
+        // Check if compression was effective (more than 10% reduction)
+        // If not effective, just use the original
+        if (compressedImageBuffer.length > buffer.byteLength * 0.9) {
+          console.log('Compression not effective, using original buffer');
+          compressedImageBuffer = Buffer.from(buffer);
+        }
       } catch (compressError) {
         console.error('Image compression error:', compressError);
-        return NextResponse.json(
-          { error: '이미지 압축 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
-          { status: 500 }
-        );
+        // Use original buffer as fallback instead of failing
+        console.warn('Using original uncompressed image as fallback');
+        compressedImageBuffer = Buffer.from(buffer);
       }
       
       // Create a base64 representation of the compressed image for frontend use
-      const base64Image = compressedImageBuffer.toString('base64');
-      const imageType = file.type;
-      const dataUrl = `data:${imageType};base64,${base64Image}`;
+      let base64Image, dataUrl;
+      try {
+        base64Image = compressedImageBuffer.toString('base64');
+        const imageType = file.type;
+        dataUrl = `data:${imageType};base64,${base64Image}`;
+      } catch (encodingError) {
+        console.error('Base64 encoding error:', encodingError);
+        return NextResponse.json(
+          { error: '이미지 인코딩 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
+          { status: 500 }
+        );
+      }
       
       // Return the metadata and image data
       return NextResponse.json({ 
         filteredMetadata,
         imageData: {
           dataUrl,
-          type: imageType,
+          type: file.type,
           name: file.name.split('.')[0]
         }
       });
@@ -72,9 +87,47 @@ export async function POST(request: NextRequest) {
       // 메타데이터 추출 실패해도 이미지 처리는 계속 진행
       try {
         const compressedImageBuffer = await compressImage(Buffer.from(buffer), file.type);
-        const base64Image = compressedImageBuffer.toString('base64');
-        const imageType = file.type;
-        const dataUrl = `data:${imageType};base64,${base64Image}`;
+        
+        // Check if compression was effective (more than 10% reduction)
+        if (compressedImageBuffer.length > buffer.byteLength * 0.9) {
+          console.log('Compression not effective, using original buffer');
+          const originalBuffer = Buffer.from(buffer);
+          
+          // Create base64 from original buffer
+          const base64Image = originalBuffer.toString('base64');
+          const dataUrl = `data:${file.type};base64,${base64Image}`;
+          
+          return NextResponse.json({ 
+            filteredMetadata: {
+              Make: null,
+              Model: null,
+              ExposureTime: null,
+              ISO: null,
+              FNumber: null,
+              FocalLength: null,
+              DateTimeOriginal: null,
+              LensModel: null
+            },
+            imageData: {
+              dataUrl,
+              type: file.type,
+              name: file.name.split('.')[0]
+            }
+          });
+        }
+        
+        // Create base64 from compressed buffer
+        let base64Image, dataUrl;
+        try {
+          base64Image = compressedImageBuffer.toString('base64');
+          dataUrl = `data:${file.type};base64,${base64Image}`;
+        } catch (encodingError) {
+          console.error('Base64 encoding error after metadata failure:', encodingError);
+          return NextResponse.json(
+            { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
+            { status: 500 }
+          );
+        }
         
         return NextResponse.json({ 
           filteredMetadata: {
@@ -89,16 +142,42 @@ export async function POST(request: NextRequest) {
           },
           imageData: {
             dataUrl,
-            type: imageType,
+            type: file.type,
             name: file.name.split('.')[0]
           }
         });
       } catch (compressError) {
-        console.error('Image compression error:', compressError);
-        return NextResponse.json(
-          { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
-          { status: 500 }
-        );
+        console.error('Image compression error after metadata failure:', compressError);
+        
+        // Last resort: try to use the original image without compression
+        try {
+          const base64Image = Buffer.from(buffer).toString('base64');
+          const dataUrl = `data:${file.type};base64,${base64Image}`;
+          
+          return NextResponse.json({ 
+            filteredMetadata: {
+              Make: null,
+              Model: null,
+              ExposureTime: null,
+              ISO: null,
+              FNumber: null,
+              FocalLength: null,
+              DateTimeOriginal: null,
+              LensModel: null
+            },
+            imageData: {
+              dataUrl,
+              type: file.type,
+              name: file.name.split('.')[0]
+            }
+          });
+        } catch (finalError) {
+          console.error('Final fallback failed:', finalError);
+          return NextResponse.json(
+            { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
+            { status: 500 }
+          );
+        }
       }
     }
   } catch (error) {
@@ -117,48 +196,74 @@ export async function POST(request: NextRequest) {
  * @returns 압축된 이미지 버퍼
  */
 async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> {
-  // JPEG, PNG, WebP 등 이미지 형식에 따라 처리
-  const sharpInstance = sharp(buffer);
-  
-  // 이미지의 메타데이터를 얻어 크기를 확인
-  const metadata = await sharpInstance.metadata();
-  const isLargeImage = metadata.width && metadata.height && 
-    (metadata.width > 3000 || metadata.height > 3000 || buffer.length > 10 * 1024 * 1024);
-  
-  // 크기에 따라 압축 수준 조정
-  const jpegQuality = isLargeImage ? 70 : 80;
-  const webpQuality = isLargeImage ? 70 : 80;
-  
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-    // JPEG의 경우 품질 조정
-    return await sharpInstance
-      .jpeg({ quality: jpegQuality, mozjpeg: true })
-      .toBuffer();
-  } else if (mimeType === 'image/png') {
-    // PNG의 경우 압축 레벨 조정 또는 JPEG로 변환 (용량 감소에 더 효과적)
-    if (isLargeImage) {
-      return await sharpInstance
-        .jpeg({ quality: jpegQuality, mozjpeg: true })
-        .toBuffer();
-    } else {
-      return await sharpInstance
-        .png({ compressionLevel: 9, adaptiveFiltering: true })
-        .toBuffer();
+  try {
+    // JPEG, PNG, WebP 등 이미지 형식에 따라 처리
+    const sharpInstance = sharp(buffer);
+    
+    // 이미지의 메타데이터를 얻어 크기를 확인
+    const metadata = await sharpInstance.metadata();
+    
+    // If metadata couldn't be obtained, return the original buffer
+    if (!metadata) {
+      console.warn('Could not get image metadata, using original image');
+      return buffer;
     }
-  } else if (mimeType === 'image/webp') {
-    // WebP의 경우 품질 조정
-    return await sharpInstance
-      .webp({ quality: webpQuality })
-      .toBuffer();
-  } else if (mimeType === 'image/heic' || mimeType === 'image/heif') {
-    // HEIC/HEIF 형식은 JPEG로 변환
-    return await sharpInstance
-      .jpeg({ quality: jpegQuality, mozjpeg: true })
-      .toBuffer();
-  } else {
-    // 그 외 형식은 JPEG로 변환하여 압축
-    return await sharpInstance
-      .jpeg({ quality: 75 })
-      .toBuffer();
+    
+    const isLargeImage = metadata.width && metadata.height && 
+      (metadata.width > 3000 || metadata.height > 3000 || buffer.length > 10 * 1024 * 1024);
+    
+    // 크기에 따라 압축 수준 조정
+    const jpegQuality = isLargeImage ? 70 : 80;
+    const webpQuality = isLargeImage ? 70 : 80;
+    
+    try {
+      if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+        // JPEG의 경우 품질 조정
+        return await sharpInstance
+          .jpeg({ quality: jpegQuality, mozjpeg: true })
+          .toBuffer();
+      } else if (mimeType === 'image/png') {
+        // PNG의 경우 압축 레벨 조정 또는 JPEG로 변환 (용량 감소에 더 효과적)
+        if (isLargeImage) {
+          return await sharpInstance
+            .jpeg({ quality: jpegQuality, mozjpeg: true })
+            .toBuffer();
+        } else {
+          return await sharpInstance
+            .png({ compressionLevel: 9, adaptiveFiltering: true })
+            .toBuffer();
+        }
+      } else if (mimeType === 'image/webp') {
+        // WebP의 경우 품질 조정
+        return await sharpInstance
+          .webp({ quality: webpQuality })
+          .toBuffer();
+      } else if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+        // HEIC/HEIF 형식은 JPEG로 변환
+        return await sharpInstance
+          .jpeg({ quality: jpegQuality, mozjpeg: true })
+          .toBuffer();
+      } else {
+        // 그 외 형식은 JPEG로 변환하여 압축
+        console.warn(`Unsupported image mime type: ${mimeType}, converting to JPEG`);
+        return await sharpInstance
+          .jpeg({ quality: 75 })
+          .toBuffer();
+      }
+    } catch (formatError) {
+      console.error(`Error processing specific format ${mimeType}:`, formatError);
+      // Last resort: try basic JPEG conversion
+      try {
+        return await sharpInstance.jpeg({ quality: 75 }).toBuffer();
+      } catch (lastError) {
+        console.error('Final conversion attempt failed:', lastError);
+        // Return original buffer if all conversion attempts fail
+        return buffer;
+      }
+    }
+  } catch (error) {
+    console.error('Error in compressImage function:', error);
+    // Return original buffer on error
+    return buffer;
   }
 }
