@@ -7,6 +7,18 @@ export async function POST(request: NextRequest) {
     // Get the form data from the request
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    // 클라이언트에서 추출한 메타데이터 가져오기
+    const clientMetadataString = formData.get('clientMetadata') as string | null;
+    let clientMetadata = null;
+    
+    if (clientMetadataString) {
+      try {
+        clientMetadata = JSON.parse(clientMetadataString);
+        console.log('클라이언트에서 전달된 메타데이터:', clientMetadata);
+      } catch (parseError) {
+        console.error('클라이언트 메타데이터 파싱 오류:', parseError);
+      }
+    }
     
     if (!file) {
       return NextResponse.json(
@@ -27,54 +39,100 @@ export async function POST(request: NextRequest) {
     // Convert the file to an ArrayBuffer
     const buffer = await file.arrayBuffer();
     
+    // Vercel API 크기 제한 (4.5MB)
+    const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+    
+    // 메타데이터 추출 시도
+    let metadata = null;
     try {
-      // Extract metadata using exifr
-      const metadata = await exifr.parse(Buffer.from(buffer));
-      const filteredMetadata = {
-        Make: metadata?.Make || null,
-        Model: metadata?.Model || null,
-        ExposureTime: metadata?.ExposureTime || null,
-        ISO: metadata?.ISO || null,
-        FNumber: metadata?.FNumber || null,
-        FocalLength: metadata?.FocalLength || null,
-        DateTimeOriginal: metadata?.DateTimeOriginal || null,
-        LensModel: metadata?.LensModel || null
-      };
-      
-      // 이미지 압축 - 해상도는 유지하면서 용량 감소
-      let compressedImageBuffer;
       try {
-        compressedImageBuffer = await compressImage(Buffer.from(buffer), file.type);
-        
-        // Check if compression was effective (more than 10% reduction)
-        // If not effective, just use the original
-        if (compressedImageBuffer.length > buffer.byteLength * 0.9) {
-          console.log('Compression not effective, using original buffer');
-          compressedImageBuffer = Buffer.from(buffer);
-        }
-      } catch (compressError) {
-        console.error('Image compression error:', compressError);
-        // Use original buffer as fallback instead of failing
-        console.warn('Using original uncompressed image as fallback');
-        compressedImageBuffer = Buffer.from(buffer);
+        // exifr로 메타데이터 추출 시도
+        metadata = await exifr.parse(Buffer.from(buffer));
+      } catch (exifrError) {
+        console.error('exifr로 메타데이터 추출 실패:', exifrError);
       }
       
-      // Create a base64 representation of the compressed image for frontend use
-      let base64Image, dataUrl;
+      // exifr로 메타데이터 추출에 실패했고, 클라이언트 메타데이터가 있으면 사용
+      if (!metadata && clientMetadata) {
+        console.log('서버 메타데이터 추출 실패, 클라이언트 메타데이터 사용');
+        
+        // 클라이언트에서 전달된 메타데이터에서 필요한 정보 추출
+        try {
+          metadata = {
+            Make: clientMetadata.Make?.description || null,
+            Model: clientMetadata.Model?.description || null,
+            ExposureTime: clientMetadata.ExposureTime?.description ? 
+              parseFloat(clientMetadata.ExposureTime.description) : null,
+            ISO: clientMetadata.ISOSpeedRatings?.description ? 
+              parseInt(clientMetadata.ISOSpeedRatings.description) : null,
+            FNumber: clientMetadata.FNumber?.description ? 
+              parseFloat(clientMetadata.FNumber.description) : null,
+            FocalLength: clientMetadata.FocalLength?.description ? 
+              parseFloat(clientMetadata.FocalLength.description) : null,
+            DateTimeOriginal: clientMetadata.DateTimeOriginal?.description || null,
+            LensModel: clientMetadata.LensModel?.description || null
+          };
+        } catch (clientMetadataError) {
+          console.error('클라이언트 메타데이터 변환 오류:', clientMetadataError);
+        }
+      }
+    } catch (metadataError) {
+      console.error('메타데이터 처리 중 오류:', metadataError);
+    }
+    
+    // 최종 메타데이터 필터링 및 정리
+    const filteredMetadata = {
+      Make: metadata?.Make || null,
+      Model: metadata?.Model || null,
+      ExposureTime: metadata?.ExposureTime || null,
+      ISO: metadata?.ISO || null,
+      FNumber: metadata?.FNumber || null,
+      FocalLength: metadata?.FocalLength || null,
+      DateTimeOriginal: metadata?.DateTimeOriginal || null,
+      LensModel: metadata?.LensModel || null
+    };
+    
+    try {
+      let imageBuffer;
+      let dataUrl;
+      
+      // 이미 클라이언트에서 압축되어 충분히 작으면 압축 과정 건너뛰기
+      if (buffer.byteLength <= VERCEL_SIZE_LIMIT) {
+        console.log('이미지가 이미 충분히 작음, 서버 압축 과정 건너뛰기:', (buffer.byteLength / (1024 * 1024)).toFixed(2) + 'MB');
+        imageBuffer = Buffer.from(buffer);
+      } else {
+        // 필요한 경우만 추가 압축 수행
+        console.log('이미지 크기가 여전히 너무 큼, 서버에서 추가 압축 시작:', (buffer.byteLength / (1024 * 1024)).toFixed(2) + 'MB');
+        try {
+          // 메타데이터를 유지하면서 압축
+          imageBuffer = await compressImage(Buffer.from(buffer), file.type);
+          
+          // 압축이 효과적이지 않으면 원본 사용
+          if (imageBuffer.length > buffer.byteLength * 0.9) {
+            console.log('압축이 효과적이지 않음, 원본 사용');
+            imageBuffer = Buffer.from(buffer);
+          }
+        } catch (compressError) {
+          console.error('이미지 압축 오류:', compressError);
+          console.warn('압축 실패, 원본 이미지 사용');
+          imageBuffer = Buffer.from(buffer);
+        }
+      }
+      
+      // 이미지 데이터를 Base64로 변환
       try {
-        base64Image = compressedImageBuffer.toString('base64');
-        const imageType = file.type;
-        dataUrl = `data:${imageType};base64,${base64Image}`;
+        const base64Image = imageBuffer.toString('base64');
+        dataUrl = `data:${file.type};base64,${base64Image}`;
       } catch (encodingError) {
-        console.error('Base64 encoding error:', encodingError);
+        console.error('Base64 인코딩 오류:', encodingError);
         return NextResponse.json(
           { error: '이미지 인코딩 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
           { status: 500 }
         );
       }
-      console.log(metadata);
-      // Return the metadata and image data
-      return NextResponse.json({ 
+      
+      // 최종 결과 반환
+      return NextResponse.json({
         filteredMetadata,
         imageData: {
           dataUrl,
@@ -82,103 +140,13 @@ export async function POST(request: NextRequest) {
           name: file.name.split('.')[0]
         }
       });
-    } catch (metadataError) {
-      console.error('Metadata extraction error:', metadataError);
-      // 메타데이터 추출 실패해도 이미지 처리는 계속 진행
-      try {
-        const compressedImageBuffer = await compressImage(Buffer.from(buffer), file.type);
-        
-        // Check if compression was effective (more than 10% reduction)
-        if (compressedImageBuffer.length > buffer.byteLength * 0.9) {
-          console.log('Compression not effective, using original buffer');
-          const originalBuffer = Buffer.from(buffer);
-          
-          // Create base64 from original buffer
-          const base64Image = originalBuffer.toString('base64');
-          const dataUrl = `data:${file.type};base64,${base64Image}`;
-          
-          return NextResponse.json({ 
-            filteredMetadata: {
-              Make: null,
-              Model: null,
-              ExposureTime: null,
-              ISO: null,
-              FNumber: null,
-              FocalLength: null,
-              DateTimeOriginal: null,
-              LensModel: null
-            },
-            imageData: {
-              dataUrl,
-              type: file.type,
-              name: file.name.split('.')[0]
-            }
-          });
-        }
-        
-        // Create base64 from compressed buffer
-        let base64Image, dataUrl;
-        try {
-          base64Image = compressedImageBuffer.toString('base64');
-          dataUrl = `data:${file.type};base64,${base64Image}`;
-        } catch (encodingError) {
-          console.error('Base64 encoding error after metadata failure:', encodingError);
-          return NextResponse.json(
-            { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
-            { status: 500 }
-          );
-        }
-        
-        return NextResponse.json({ 
-          filteredMetadata: {
-            Make: null,
-            Model: null,
-            ExposureTime: null,
-            ISO: null,
-            FNumber: null,
-            FocalLength: null,
-            DateTimeOriginal: null,
-            LensModel: null
-          },
-          imageData: {
-            dataUrl,
-            type: file.type,
-            name: file.name.split('.')[0]
-          }
-        });
-      } catch (compressError) {
-        console.error('Image compression error after metadata failure:', compressError);
-        
-        // Last resort: try to use the original image without compression
-        try {
-          const base64Image = Buffer.from(buffer).toString('base64');
-          const dataUrl = `data:${file.type};base64,${base64Image}`;
-          
-          return NextResponse.json({ 
-            filteredMetadata: {
-              Make: null,
-              Model: null,
-              ExposureTime: null,
-              ISO: null,
-              FNumber: null,
-              FocalLength: null,
-              DateTimeOriginal: null,
-              LensModel: null
-            },
-            imageData: {
-              dataUrl,
-              type: file.type,
-              name: file.name.split('.')[0]
-            }
-          });
-        } catch (finalError) {
-          console.error('Final fallback failed:', finalError);
-          return NextResponse.json(
-            { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
-            { status: 500 }
-          );
-        }
-      }
+      
+    } catch (imageProcessingError) {
+      console.error('이미지 처리 중 오류:', imageProcessingError);
+      return NextResponse.json(
+        { error: '이미지 처리 중 오류가 발생했습니다. 다른 이미지를 시도해보세요.' },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error('Error processing file:', error);
