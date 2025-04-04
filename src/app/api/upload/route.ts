@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-      
+      console.log(metadata);
       // Return the metadata and image data
       return NextResponse.json({ 
         filteredMetadata,
@@ -246,16 +246,37 @@ async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> 
             pipeline = pipeline.resize(width, height);
           }
           
+          // 모든 메타데이터 유지하도록 설정
+          pipeline = pipeline.withMetadata();
+          
           if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
             compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100), mozjpeg: true }).toBuffer();
           } else if (mimeType === 'image/png') {
-            // PNG를 JPEG로 변환 (더 나은 압축을 위해)
-            compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100), mozjpeg: true }).toBuffer();
+            // PNG 형식 유지하면서 압축 (메타데이터 보존을 위해)
+            compressedBuffer = await pipeline.png({
+              compressionLevel: 9,
+              adaptiveFiltering: true,
+              quality: Math.min(Math.round(currentQuality * 100), 90)
+            }).toBuffer();
           } else if (mimeType === 'image/webp') {
             compressedBuffer = await pipeline.webp({ quality: Math.round(currentQuality * 100) }).toBuffer();
           } else {
-            // 그 외 형식은 JPEG로 변환하여 압축
-            compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100) }).toBuffer();
+            // 그 외 형식은 원본 형식 유지하면서 압축
+            if (mimeType.includes('image/')) {
+              const format = mimeType.split('/')[1];
+              // 지원되는 포맷에 대해서만 처리
+              if (['jpeg', 'jpg', 'png', 'webp', 'avif', 'tiff', 'gif'].includes(format)) {
+                compressedBuffer = await pipeline.toFormat(format as keyof sharp.FormatEnum, {
+                  quality: Math.round(currentQuality * 100)
+                }).toBuffer();
+              } else {
+                // 지원되지 않는 포맷은 JPEG로 변환
+                compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100) }).toBuffer();
+              }
+            } else {
+              // 알 수 없는 포맷이면 JPEG로 변환
+              compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100) }).toBuffer();
+            }
           }
           
           // 압축된 버퍼가 충분히 작은지 확인
