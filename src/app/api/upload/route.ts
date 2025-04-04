@@ -11,9 +11,15 @@ export async function POST(request: NextRequest) {
     const clientMetadataString = formData.get('clientMetadata') as string | null;
     let clientMetadata = null;
     
+    // 클라이언트에서 전송된 유저 에이전트 확인 (모바일 여부 감지)
+    const userAgent = request.headers.get('user-agent') || '';
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    console.log('API 요청 - 모바일 디바이스 여부:', isMobile);
+    
     if (clientMetadataString) {
       try {
         clientMetadata = JSON.parse(clientMetadataString);
+        console.log('클라이언트 메타데이터 수신 성공');
       } catch (parseError) {
         console.error('클라이언트 메타데이터 파싱 오류:', parseError);
       }
@@ -44,35 +50,34 @@ export async function POST(request: NextRequest) {
     // 메타데이터 추출 시도
     let metadata = null;
     try {
-      try {
-        // exifr로 메타데이터 추출 시도
-        metadata = await exifr.parse(Buffer.from(buffer));
-      } catch (exifrError) {
-        console.error('exifr로 메타데이터 추출 실패:', exifrError);
+      // 모바일 디바이스에서는 클라이언트 메타데이터를 우선적으로 사용 (압축 과정에서 손실되는 경우가 많음)
+      if (isMobile && clientMetadata) {
+        console.log('모바일 디바이스: 클라이언트 메타데이터 우선 사용');
+        try {
+          metadata = extractClientMetadata(clientMetadata);
+        } catch (clientMetaError) {
+          console.error('모바일 클라이언트 메타데이터 파싱 실패:', clientMetaError);
+        }
       }
       
-      // exifr로 메타데이터 추출에 실패했고, 클라이언트 메타데이터가 있으면 사용
-      if (!metadata && clientMetadata) {
-        console.log('서버 메타데이터 추출 실패, 클라이언트 메타데이터 사용');
-        
-        // 클라이언트에서 전달된 메타데이터에서 필요한 정보 추출
+      // 모바일이 아니거나 클라이언트 메타데이터 추출 실패 시 서버에서 추출 시도
+      if (!metadata) {
         try {
-          metadata = {
-            Make: clientMetadata.Make?.description || null,
-            Model: clientMetadata.Model?.description || null,
-            ExposureTime: clientMetadata.ExposureTime?.description ? 
-              parseFloat(clientMetadata.ExposureTime.description) : null,
-            ISO: clientMetadata.ISOSpeedRatings?.description ? 
-              parseInt(clientMetadata.ISOSpeedRatings.description) : null,
-            FNumber: clientMetadata.FNumber?.description ? 
-              parseFloat(clientMetadata.FNumber.description) : null,
-            FocalLength: clientMetadata.FocalLength?.description ? 
-              parseFloat(clientMetadata.FocalLength.description) : null,
-            DateTimeOriginal: clientMetadata.DateTimeOriginal?.description || null,
-            LensModel: clientMetadata.LensModel?.description || null
-          };
-        } catch (clientMetadataError) {
-          console.error('클라이언트 메타데이터 변환 오류:', clientMetadataError);
+          // exifr로 메타데이터 추출 시도
+          metadata = await exifr.parse(Buffer.from(buffer));
+          console.log('서버에서 메타데이터 추출 성공');
+        } catch (exifrError) {
+          console.error('exifr로 메타데이터 추출 실패:', exifrError);
+        }
+        
+        // 서버 메타데이터 추출에 실패했고, 클라이언트 메타데이터가 있으면 사용
+        if (!metadata && clientMetadata) {
+          console.log('서버 메타데이터 추출 실패, 클라이언트 메타데이터 사용');
+          try {
+            metadata = extractClientMetadata(clientMetadata);
+          } catch (clientMetaError) {
+            console.error('클라이언트 메타데이터 변환 실패:', clientMetaError);
+          }
         }
       }
     } catch (metadataError) {
@@ -91,6 +96,10 @@ export async function POST(request: NextRequest) {
       LensModel: metadata?.LensModel || null
     };
     
+    // 메타데이터 유무 확인 로그
+    const hasMetadata = Object.values(filteredMetadata).some(value => value !== null);
+    console.log('메타데이터 추출 결과:', hasMetadata ? '성공' : '실패');
+    
     try {
       let imageBuffer;
       let dataUrl;
@@ -104,7 +113,7 @@ export async function POST(request: NextRequest) {
         console.log('이미지 크기가 여전히 너무 큼, 서버에서 추가 압축 시작:', (buffer.byteLength / (1024 * 1024)).toFixed(2) + 'MB');
         try {
           // 메타데이터를 유지하면서 압축
-          imageBuffer = await compressImage(Buffer.from(buffer), file.type);
+          imageBuffer = await compressImage(Buffer.from(buffer), file.type, isMobile);
           
           // 압축이 효과적이지 않으면 원본 사용
           if (imageBuffer.length > buffer.byteLength * 0.9) {
@@ -157,12 +166,88 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * 클라이언트에서 전송된 메타데이터 추출 함수
+ * @param clientMetadata 클라이언트에서 전송된 메타데이터
+ * @returns 추출된 메타데이터 객체
+ */
+function extractClientMetadata(clientMetadata: Record<string, unknown>) {
+  // ExifReader와 다른 메타데이터 라이브러리에 따라 구조가 달라질 수 있어 두 경우 모두 처리
+  
+  // 표준 키를 찾아서 값 추출
+  const extractValueFromClientMeta = (key: string) => {
+    // ExifReader 형식
+    if (clientMetadata[key] && typeof clientMetadata[key] === 'object' && clientMetadata[key] !== null) {
+      const metaObj = clientMetadata[key] as Record<string, unknown>;
+      if ('description' in metaObj) {
+        return metaObj.description;
+      }
+    }
+    
+    // 다른 형식 (일반 객체 값)
+    if (clientMetadata[key] && typeof clientMetadata[key] !== 'object') {
+      return clientMetadata[key];
+    }
+    
+    // 특정 태그가 다른 명칭으로 저장되어 있을 수 있음
+    const aliases: Record<string, string[]> = {
+      'ISO': ['ISOSpeedRatings', 'PhotographicSensitivity', 'ISO'],
+      'ExposureTime': ['ExposureTime', 'ShutterSpeedValue'],
+      'DateTimeOriginal': ['DateTimeOriginal', 'DateTime', 'CreateDate']
+    };
+    
+    if (aliases[key]) {
+      for (const alias of aliases[key]) {
+        if (clientMetadata[alias] && typeof clientMetadata[alias] === 'object' && clientMetadata[alias] !== null) {
+          const aliasObj = clientMetadata[alias] as Record<string, unknown>;
+          if ('description' in aliasObj) {
+            return aliasObj.description;
+          }
+        }
+        if (clientMetadata[alias] && typeof clientMetadata[alias] !== 'object') {
+          return clientMetadata[alias];
+        }
+      }
+    }
+    
+    return null;
+  };
+  
+  // 메타데이터 객체 생성
+  return {
+    Make: extractValueFromClientMeta('Make'),
+    Model: extractValueFromClientMeta('Model'),
+    ExposureTime: parseFloatSafe(extractValueFromClientMeta('ExposureTime')),
+    ISO: parseIntSafe(extractValueFromClientMeta('ISO')),
+    FNumber: parseFloatSafe(extractValueFromClientMeta('FNumber')),
+    FocalLength: parseFloatSafe(extractValueFromClientMeta('FocalLength')),
+    DateTimeOriginal: extractValueFromClientMeta('DateTimeOriginal'),
+    LensModel: extractValueFromClientMeta('LensModel')
+  };
+}
+
+/**
+ * 안전하게 숫자로 변환하는 유틸리티 함수들
+ */
+function parseFloatSafe(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const num = parseFloat(String(value).replace(/[^\d.]/g, ''));
+  return isNaN(num) ? null : num;
+}
+
+function parseIntSafe(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const num = parseInt(String(value).replace(/[^\d]/g, ''));
+  return isNaN(num) ? null : num;
+}
+
+/**
  * 이미지 압축 함수 - 해상도는 유지하면서 품질 조정으로 용량 감소
  * @param buffer 이미지 버퍼
  * @param mimeType 이미지 MIME 타입
+ * @param isMobile 모바일 디바이스 여부
  * @returns 압축된 이미지 버퍼
  */
-async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> {
+async function compressImage(buffer: Buffer, mimeType: string, isMobile: boolean = false): Promise<Buffer> {
   try {
     // Vercel API 크기 제한 (4.5MB)
     const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
@@ -190,7 +275,7 @@ async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> 
       let height = metadata.height;
       
       // 매우 큰 이미지의 경우 해상도 감소
-      const MAX_DIMENSION = 3000; // 적정 최대 크기
+      const MAX_DIMENSION = isMobile ? 2500 : 3000; // 모바일은 더 작게 리사이징
       let resize = false;
       
       if (width && height && (width > MAX_DIMENSION || height > MAX_DIMENSION)) {
@@ -248,7 +333,7 @@ async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> 
           
           // 압축된 버퍼가 충분히 작은지 확인
           if (compressedBuffer.length <= VERCEL_SIZE_LIMIT || currentQuality <= 0.1) {
-            console.log(`서버 압축 완료: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)}MB, 품질: ${currentQuality.toFixed(1)}`);
+            console.log(`서버 압축 완료: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)}MB (품질: ${currentQuality.toFixed(1)})`);
             return compressedBuffer;
           }
           
@@ -283,10 +368,10 @@ async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> 
     const isLargeImage = metadata.width && metadata.height && 
       (metadata.width > 3000 || metadata.height > 3000 || buffer.length > 10 * 1024 * 1024);
     
-    // 초기 품질값 - 큰 이미지는 더 공격적으로 압축
-    const initialQuality = isLargeImage ? 0.5 : 0.8;
+    // 초기 품질값 - 큰 이미지는 더 공격적으로 압축, 모바일은 더 낮은 품질로 시작
+    const initialQuality = isLargeImage ? 0.4 : (isMobile ? 0.6 : 0.7);
     
-    return await compressWithQuality(initialQuality);
+    return await compressWithQuality(initialQuality, isMobile ? 4 : 5);
   } catch (error) {
     console.error('Error in compressImage function:', error);
     // Return original buffer on error

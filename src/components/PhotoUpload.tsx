@@ -6,6 +6,7 @@ import PhotoDropZone from '@/components/PhotoDropZone';
 import StatusMessage from '@/components/StatusMessage';
 import { usePhoto } from '@/contexts/PhotoContext';
 import ExifReader from 'exifreader';
+import { isMobileDevice } from '@/utils/deviceUtils';
 
 // ExifReader 결과 타입은 복잡하므로 단순화
 type ExifMetadata = unknown;
@@ -26,12 +27,13 @@ export default function PhotoUpload() {
   const compressImageWithMetadata = async (file: File): Promise<{ compressedFile: File, extractedMetadata: ExifMetadata | null }> => {
     return new Promise(async (resolve) => {
       try {
-        // 1. 원본 이미지에서 메타데이터 추출
+        // 1. 원본 이미지에서 메타데이터 추출 (모든 환경에서 먼저 수행)
         const arrayBuffer = await file.arrayBuffer();
         let extractedMetadata: ExifMetadata | null = null;
         
         try {
           extractedMetadata = ExifReader.load(arrayBuffer);
+          console.log('메타데이터 추출 성공:', extractedMetadata);
         } catch (exifError) {
           console.warn('메타데이터 추출 실패:', exifError);
           // 메타데이터 추출 실패해도 계속 진행
@@ -46,6 +48,10 @@ export default function PhotoUpload() {
           resolve({ compressedFile: file, extractedMetadata });
           return;
         }
+        
+        // 모바일 디바이스 감지
+        const isMobile = isMobileDevice();
+        console.log('모바일 디바이스 여부:', isMobile);
         
         const img = new Image();
         img.src = URL.createObjectURL(file);
@@ -128,11 +134,11 @@ export default function PhotoUpload() {
             tryCompression();
           };
           
-          // 이미지 크기에 따른 초기 품질 설정
+          // 이미지 크기에 따른 초기 품질 설정 (모바일에서는 더 낮은 초기 품질 적용)
           const isLargeImage = img.width > 3000 || img.height > 3000 || file.size > 10 * 1024 * 1024;
-          const initialQuality = isLargeImage ? 0.5 : 0.8;
+          const initialQuality = isLargeImage ? 0.5 : (isMobile ? 0.6 : 0.8); // 모바일에서는 더 낮은 품질로 시작
           
-          compressWithQuality(initialQuality, 8);
+          compressWithQuality(initialQuality, isMobile ? 6 : 8); // 모바일에서는 시도 횟수 제한
         };
         
         img.onerror = () => {
@@ -141,13 +147,13 @@ export default function PhotoUpload() {
           resolve({ compressedFile: file, extractedMetadata });
         };
         
-        // 타임아웃 설정
+        // 타임아웃 설정 (모바일에서는 더 긴 타임아웃 적용)
         setTimeout(() => {
           if (img.complete) return;
           console.warn('이미지 처리 타임아웃, 원본 파일 사용');
           URL.revokeObjectURL(img.src);
           resolve({ compressedFile: file, extractedMetadata });
-        }, 10000); // 10초 타임아웃
+        }, isMobile ? 15000 : 10000); // 모바일에서는 15초, 그 외에는 10초
         
       } catch (err) {
         console.error('이미지 압축 오류:', err);
@@ -174,6 +180,10 @@ export default function PhotoUpload() {
       if (extractedMetadata) {
         formData.append('clientMetadata', JSON.stringify(extractedMetadata));
       }
+
+      // 로그 추가 - 디버깅 용
+      console.log('압축된 파일 크기:', (compressedFile.size / (1024 * 1024)).toFixed(2) + 'MB');
+      console.log('메타데이터 포함 여부:', extractedMetadata ? 'O' : 'X');
 
       const response = await fetch('/api/upload', {
         method: 'POST',
