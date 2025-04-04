@@ -13,6 +13,63 @@ export default function PhotoUpload() {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
 
+  /**
+   * Compresses an image file while maintaining its original resolution
+   * @param file Original image file
+   * @param quality Compression quality (0-1)
+   * @returns Promise resolving to a compressed File object
+   */
+  const compressImage = (file: File, quality = 0.7): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      
+      img.onload = () => {
+        // Create canvas with the same dimensions as the image
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // Draw image on canvas
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context not available'));
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        
+        // Convert to blob with reduced quality
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Blob conversion failed'));
+              return;
+            }
+            
+            // Create a new File from the blob
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            
+            // Clean up object URL
+            URL.revokeObjectURL(img.src);
+            
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Image loading failed'));
+      };
+    });
+  };
+
   const handleFileSelect = async (selectedFile: File) => {
     setError(null);
     setLoading(true);
@@ -22,8 +79,11 @@ export default function PhotoUpload() {
     setPreview(objectUrl);
 
     try {
+      // Compress the image before uploading
+      const compressedFile = await compressImage(selectedFile);
+      
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      formData.append('file', compressedFile);
 
       const response = await fetch('/api/upload', {
         method: 'POST',
