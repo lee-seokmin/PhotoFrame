@@ -31,8 +31,7 @@ export default function PhotoUpload() {
         let extractedMetadata: ExifMetadata | null = null;
         
         try {
-          extractedMetadata = ExifReader.load(new Uint8Array(arrayBuffer));
-          console.log('클라이언트에서 추출한 메타데이터:', extractedMetadata);
+          extractedMetadata = ExifReader.load(arrayBuffer);
         } catch (exifError) {
           console.warn('메타데이터 추출 실패:', exifError);
           // 메타데이터 추출 실패해도 계속 진행

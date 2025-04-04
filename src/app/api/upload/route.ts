@@ -14,7 +14,6 @@ export async function POST(request: NextRequest) {
     if (clientMetadataString) {
       try {
         clientMetadata = JSON.parse(clientMetadataString);
-        console.log('클라이언트에서 전달된 메타데이터:', clientMetadata);
       } catch (parseError) {
         console.error('클라이언트 메타데이터 파싱 오류:', parseError);
       }
