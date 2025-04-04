@@ -197,6 +197,9 @@ export async function POST(request: NextRequest) {
  */
 async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> {
   try {
+    // Vercel API 크기 제한 (4.5MB)
+    const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+
     // JPEG, PNG, WebP 등 이미지 형식에 따라 처리
     const sharpInstance = sharp(buffer);
     
@@ -209,58 +212,93 @@ async function compressImage(buffer: Buffer, mimeType: string): Promise<Buffer> 
       return buffer;
     }
     
+    // Progressive compression function
+    const compressWithQuality = async (quality: number, maxAttempts = 5): Promise<Buffer> => {
+      // 초기 압축 시도
+      let compressedBuffer: Buffer;
+      let currentQuality = quality;
+      
+      // 차원 계산
+      let width = metadata.width;
+      let height = metadata.height;
+      
+      // 매우 큰 이미지의 경우 해상도 감소
+      const MAX_DIMENSION = 3000; // 적정 최대 크기
+      let resize = false;
+      
+      if (width && height && (width > MAX_DIMENSION || height > MAX_DIMENSION)) {
+        resize = true;
+        if (width > height) {
+          height = Math.round((height / width) * MAX_DIMENSION);
+          width = MAX_DIMENSION;
+        } else {
+          width = Math.round((width / height) * MAX_DIMENSION);
+          height = MAX_DIMENSION;
+        }
+      }
+      
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          let pipeline = sharpInstance.clone();
+          
+          // 필요한 경우 크기 조정
+          if (resize) {
+            pipeline = pipeline.resize(width, height);
+          }
+          
+          if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+            compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100), mozjpeg: true }).toBuffer();
+          } else if (mimeType === 'image/png') {
+            // PNG를 JPEG로 변환 (더 나은 압축을 위해)
+            compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100), mozjpeg: true }).toBuffer();
+          } else if (mimeType === 'image/webp') {
+            compressedBuffer = await pipeline.webp({ quality: Math.round(currentQuality * 100) }).toBuffer();
+          } else {
+            // 그 외 형식은 JPEG로 변환하여 압축
+            compressedBuffer = await pipeline.jpeg({ quality: Math.round(currentQuality * 100) }).toBuffer();
+          }
+          
+          // 압축된 버퍼가 충분히 작은지 확인
+          if (compressedBuffer.length <= VERCEL_SIZE_LIMIT || currentQuality <= 0.1) {
+            console.log(`서버 압축 완료: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)}MB, 품질: ${currentQuality.toFixed(1)}`);
+            return compressedBuffer;
+          }
+          
+          // 품질 감소 및 재시도
+          currentQuality = Math.max(currentQuality - 0.1, 0.1);
+          console.log(`서버 압축 시도 ${attempt+1}: ${(compressedBuffer.length / (1024 * 1024)).toFixed(2)}MB, 다음 품질: ${currentQuality.toFixed(1)}`);
+          
+          // 최저 품질에 도달하고 여전히 크기가 크다면, 해상도 감소 시도
+          if (currentQuality <= 0.1 && attempt === maxAttempts - 2 && width && height) {
+            console.log('최저 품질로도 충분히 작아지지 않음, 해상도 추가 감소');
+            width = Math.round(width * 0.7);
+            height = Math.round(height * 0.7);
+            resize = true;
+          }
+        } catch (err) {
+          console.error(`압축 시도 ${attempt+1} 실패:`, err);
+          if (attempt === maxAttempts - 1) throw err;
+        }
+      }
+      
+      // 모든 시도가 실패하면 마지막으로 생성된 버퍼 반환
+      if (compressedBuffer!) {
+        return compressedBuffer!;
+      }
+      
+      // 모든 압축 시도가 실패하면 원본 반환
+      console.warn('모든 압축 시도 실패, 원본 반환');
+      return buffer;
+    };
+    
+    // 이미지 크기에 따른 초기 품질 설정
     const isLargeImage = metadata.width && metadata.height && 
       (metadata.width > 3000 || metadata.height > 3000 || buffer.length > 10 * 1024 * 1024);
     
-    // 크기에 따라 압축 수준 조정
-    const jpegQuality = isLargeImage ? 70 : 80;
-    const webpQuality = isLargeImage ? 70 : 80;
+    // 초기 품질값 - 큰 이미지는 더 공격적으로 압축
+    const initialQuality = isLargeImage ? 0.5 : 0.8;
     
-    try {
-      if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
-        // JPEG의 경우 품질 조정
-        return await sharpInstance
-          .jpeg({ quality: jpegQuality, mozjpeg: true })
-          .toBuffer();
-      } else if (mimeType === 'image/png') {
-        // PNG의 경우 압축 레벨 조정 또는 JPEG로 변환 (용량 감소에 더 효과적)
-        if (isLargeImage) {
-          return await sharpInstance
-            .jpeg({ quality: jpegQuality, mozjpeg: true })
-            .toBuffer();
-        } else {
-          return await sharpInstance
-            .png({ compressionLevel: 9, adaptiveFiltering: true })
-            .toBuffer();
-        }
-      } else if (mimeType === 'image/webp') {
-        // WebP의 경우 품질 조정
-        return await sharpInstance
-          .webp({ quality: webpQuality })
-          .toBuffer();
-      } else if (mimeType === 'image/heic' || mimeType === 'image/heif') {
-        // HEIC/HEIF 형식은 JPEG로 변환
-        return await sharpInstance
-          .jpeg({ quality: jpegQuality, mozjpeg: true })
-          .toBuffer();
-      } else {
-        // 그 외 형식은 JPEG로 변환하여 압축
-        console.warn(`Unsupported image mime type: ${mimeType}, converting to JPEG`);
-        return await sharpInstance
-          .jpeg({ quality: 75 })
-          .toBuffer();
-      }
-    } catch (formatError) {
-      console.error(`Error processing specific format ${mimeType}:`, formatError);
-      // Last resort: try basic JPEG conversion
-      try {
-        return await sharpInstance.jpeg({ quality: 75 }).toBuffer();
-      } catch (lastError) {
-        console.error('Final conversion attempt failed:', lastError);
-        // Return original buffer if all conversion attempts fail
-        return buffer;
-      }
-    }
+    return await compressWithQuality(initialQuality);
   } catch (error) {
     console.error('Error in compressImage function:', error);
     // Return original buffer on error

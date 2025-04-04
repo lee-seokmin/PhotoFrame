@@ -21,11 +21,13 @@ export default function PhotoUpload() {
    */
   const compressImage = (file: File, quality = 0.7): Promise<File> => {
     return new Promise((resolve) => {
+      // Check for Vercel API size limit (4.5MB)
+      const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+      
       // First check if the file is too large or in an unsuitable format
       if (file.size > 50 * 1024 * 1024) {
-        console.warn('File very large, using original file as fallback');
-        resolve(file); // Use original file as fallback for very large files
-        return;
+        console.warn('File very large, attempting aggressive compression');
+        // Continue with compression for large files instead of just returning
       }
       
       const img = new Image();
@@ -33,54 +35,90 @@ export default function PhotoUpload() {
       
       img.onload = () => {
         try {
-          // Create canvas with the same dimensions as the image
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          
-          // Draw image on canvas
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            console.warn('Canvas context not available, using original file');
-            URL.revokeObjectURL(img.src);
-            resolve(file); // Fallback to original file
-            return;
-          }
-          
-          ctx.drawImage(img, 0, 0, img.width, img.height);
-          
-          // Convert to blob with reduced quality
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) {
-                console.warn('Blob conversion failed, using original file');
-                URL.revokeObjectURL(img.src);
-                resolve(file); // Fallback to original file
-                return;
+          // Progressive compression strategy
+          const attemptCompression = (currentQuality: number, maxAttempts: number): void => {
+            // Create canvas with the same dimensions as the image
+            const canvas = document.createElement('canvas');
+            
+            // Calculate dimensions
+            let width = img.width;
+            let height = img.height;
+            
+            // If the image is extremely large, scale it down while maintaining aspect ratio
+            const MAX_DIMENSION = 3000; // Reasonable maximum dimension
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+              if (width > height) {
+                height = Math.round((height / width) * MAX_DIMENSION);
+                width = MAX_DIMENSION;
+              } else {
+                width = Math.round((width / height) * MAX_DIMENSION);
+                height = MAX_DIMENSION;
               }
-              
-              // Verify the blob is valid
-              if (blob.size === 0) {
-                console.warn('Generated blob has zero size, using original file');
-                URL.revokeObjectURL(img.src);
-                resolve(file); // Fallback to original file
-                return;
-              }
-              
-              // Create a new File from the blob
-              const compressedFile = new File([blob], file.name, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              
-              // Clean up object URL
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Draw image on canvas with potentially reduced dimensions
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              console.warn('Canvas context not available, using original file');
               URL.revokeObjectURL(img.src);
-              
-              resolve(compressedFile);
-            },
-            'image/jpeg',
-            quality
-          );
+              resolve(file); // Fallback to original file
+              return;
+            }
+            
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to blob with current quality setting
+            canvas.toBlob(
+              (blob) => {
+                if (!blob) {
+                  console.warn('Blob conversion failed, using original file');
+                  URL.revokeObjectURL(img.src);
+                  resolve(file); // Fallback to original file
+                  return;
+                }
+                
+                // Verify the blob is valid
+                if (blob.size === 0) {
+                  console.warn('Generated blob has zero size, using original file');
+                  URL.revokeObjectURL(img.src);
+                  resolve(file); // Fallback to original file
+                  return;
+                }
+                
+                // Check if compressed size is below Vercel limit
+                if (blob.size <= VERCEL_SIZE_LIMIT || currentQuality <= 0.1 || maxAttempts <= 0) {
+                  console.log(`Compression successful: ${(blob.size / (1024 * 1024)).toFixed(2)}MB with quality ${currentQuality}`);
+                  
+                  // Create a new File from the blob
+                  const compressedFile = new File([blob], file.name, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now(),
+                  });
+                  
+                  // Clean up object URL
+                  URL.revokeObjectURL(img.src);
+                  
+                  resolve(compressedFile);
+                } else {
+                  // Try again with lower quality
+                  console.log(`Compression attempt: ${(blob.size / (1024 * 1024)).toFixed(2)}MB with quality ${currentQuality}, reducing quality...`);
+                  const newQuality = Math.max(currentQuality - 0.1, 0.1);
+                  attemptCompression(newQuality, maxAttempts - 1);
+                }
+              },
+              'image/jpeg',
+              currentQuality
+            );
+          };
+          
+          // Start compression with initial quality
+          // Use more aggressive starting point for very large files
+          const initialQuality = file.size > 10 * 1024 * 1024 ? 0.5 : quality;
+          attemptCompression(initialQuality, 10);
+          
         } catch (err) {
           console.error('Error during image compression:', err);
           URL.revokeObjectURL(img.src);
