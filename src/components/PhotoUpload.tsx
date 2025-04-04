@@ -31,7 +31,13 @@ export default function PhotoUpload() {
       });
 
       if (!response.ok) {
-        throw new Error('파일 업로드에 실패했습니다');
+        // 상태 코드에 따른 에러 메시지 설정
+        if (response.status === 413) {
+          throw new Error('이미지 크기가 너무 큽니다. 서버에서 압축 중이지만 처리에 실패했습니다.');
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `파일 업로드에 실패했습니다 (${response.status})`);
+        }
       }
 
       const data = await response.json();
