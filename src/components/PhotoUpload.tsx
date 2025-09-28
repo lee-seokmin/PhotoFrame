@@ -130,45 +130,48 @@ export default function PhotoUpload() {
       formData.append('file', compressedFile);
       // 추출된 메타데이터가 있으면 함께 전송 (크기 제한 적용)
       if (extractedMetadata) {
-        const metadataString = JSON.stringify(extractedMetadata);
-        const MAX_METADATA_SIZE = 100 * 1024; // 100KB 제한
+        // 항상 필수 메타데이터만 추출 (ExifReader는 너무 많은 데이터를 포함)
+        console.log('필수 메타데이터만 추출합니다.');
+        const metadataObj = extractedMetadata as Record<string, unknown>;
         
-        if (metadataString.length > MAX_METADATA_SIZE) {
-          console.warn('메타데이터가 너무 큽니다. 필수 정보만 추출합니다.');
-          // 필수 메타데이터만 추출
-          const metadataObj = extractedMetadata as Record<string, unknown>;
-          const essentialMetadata = {
-            Make: metadataObj.Make,
-            Model: metadataObj.Model,
-            ExposureTime: metadataObj.ExposureTime,
-            ISO: metadataObj.ISO,
-            FNumber: metadataObj.FNumber,
-            FocalLength: metadataObj.FocalLength,
-            DateTimeOriginal: metadataObj.DateTimeOriginal,
-            LensModel: metadataObj.LensModel
-          };
-          formData.append('clientMetadata', JSON.stringify(essentialMetadata));
-        } else {
-          formData.append('clientMetadata', metadataString);
-        }
+        // ExifReader의 description 속성에서 값 추출
+        const extractValue = (key: string) => {
+          const obj = metadataObj[key] as Record<string, unknown>;
+          if (obj && typeof obj === 'object' && 'description' in obj) {
+            return obj.description;
+          }
+          return obj;
+        };
+        
+        const essentialMetadata = {
+          Make: extractValue('Make'),
+          Model: extractValue('Model'),
+          ExposureTime: extractValue('ExposureTime'),
+          ISO: extractValue('ISO'),
+          FNumber: extractValue('FNumber'),
+          FocalLength: extractValue('FocalLength'),
+          DateTimeOriginal: extractValue('DateTimeOriginal'),
+          LensModel: extractValue('LensModel')
+        };
+        
+        const essentialMetadataString = JSON.stringify(essentialMetadata);
+        console.log('필수 메타데이터 크기:', (essentialMetadataString.length / 1024).toFixed(2) + 'KB');
+        formData.append('clientMetadata', essentialMetadataString);
       }
 
       // 로그 추가 - 디버깅 용
       console.log('압축된 파일 크기:', (compressedFile.size / (1024 * 1024)).toFixed(2) + 'MB');
       console.log('메타데이터 포함 여부:', extractedMetadata ? 'O' : 'X');
       
-      // 메타데이터 크기 확인
-      if (extractedMetadata) {
-        const metadataString = JSON.stringify(extractedMetadata);
-        console.log('메타데이터 크기:', (metadataString.length / 1024).toFixed(2) + 'KB');
-        console.log('전체 FormData 예상 크기:', ((compressedFile.size + metadataString.length) / (1024 * 1024)).toFixed(2) + 'MB');
-        
-        // Vercel 제한 확인
-        const totalSize = compressedFile.size + metadataString.length;
-        const VERCEL_LIMIT = 4.5 * 1024 * 1024;
-        if (totalSize > VERCEL_LIMIT) {
-          console.error(`❌ 전체 크기가 Vercel 제한을 초과합니다: ${(totalSize / (1024 * 1024)).toFixed(2)}MB > ${(VERCEL_LIMIT / (1024 * 1024)).toFixed(1)}MB`);
-        }
+      // 전체 FormData 크기 확인
+      const VERCEL_LIMIT = 4.5 * 1024 * 1024;
+      const totalSize = compressedFile.size + (extractedMetadata ? JSON.stringify(extractedMetadata).length : 0);
+      console.log('전체 FormData 예상 크기:', (totalSize / (1024 * 1024)).toFixed(2) + 'MB');
+      
+      if (totalSize > VERCEL_LIMIT) {
+        console.error(`❌ 전체 크기가 Vercel 제한을 초과합니다: ${(totalSize / (1024 * 1024)).toFixed(2)}MB > ${(VERCEL_LIMIT / (1024 * 1024)).toFixed(1)}MB`);
+      } else {
+        console.log('✅ Vercel 제한 내에서 업로드 가능합니다.');
       }
 
       const response = await fetch('/api/upload', {
