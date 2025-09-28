@@ -52,21 +52,58 @@ export default function PhotoUpload() {
       const isMobile = isMobileDevice();
       console.log('모바일 디바이스 여부:', isMobile);
       
-      // browser-image-compression 옵션 설정
+      // browser-image-compression 옵션 설정 (Vercel 제한에 맞춰 매우 공격적으로 압축)
       const options = {
-        maxSizeMB: 4.0, // 4MB로 제한 (Vercel 제한보다 여유있게)
-        maxWidthOrHeight: isMobile ? 2500 : 3000, // 모바일에서는 더 작은 해상도
+        maxSizeMB: 2.5, // 2.5MB로 제한 (Vercel 4.5MB 제한보다 훨씬 여유있게)
+        maxWidthOrHeight: isMobile ? 1500 : 2000, // 더 작은 해상도로 설정
         useWebWorker: true, // 웹 워커 사용으로 UI 블로킹 방지
         fileType: 'image/jpeg', // JPEG로 변환하여 최적의 압축률
-        initialQuality: isMobile ? 0.6 : 0.8, // 모바일에서는 더 낮은 초기 품질
+        initialQuality: isMobile ? 0.3 : 0.4, // 매우 낮은 초기 품질로 설정
         alwaysKeepResolution: false, // 필요시 해상도 조정 허용
         preserveExif: false, // EXIF 메타데이터는 별도로 추출했으므로 제거
+        maxIteration: 15, // 최대 압축 시도 횟수 증가
       };
       
       console.log('browser-image-compression으로 압축 시작...');
+      console.log(`원본 파일 크기: ${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+      
       const compressedFile = await imageCompression(file, options);
       
       console.log(`압축 완료: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB (원본: ${(file.size / (1024 * 1024)).toFixed(2)}MB)`);
+      console.log(`압축률: ${((1 - compressedFile.size / file.size) * 100).toFixed(1)}%`);
+      
+      // 압축이 충분하지 않은 경우 추가 압축 시도
+      if (compressedFile.size > VERCEL_SIZE_LIMIT) {
+        console.warn(`⚠️ 압축된 파일이 여전히 Vercel 제한(${(VERCEL_SIZE_LIMIT / (1024 * 1024)).toFixed(1)}MB)을 초과합니다: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
+        console.log('추가 압축 시도 중...');
+        
+        // 더 공격적인 압축 옵션으로 재시도
+        const aggressiveOptions = {
+          maxSizeMB: 2.0, // 2MB로 더 제한
+          maxWidthOrHeight: isMobile ? 1200 : 1500, // 더 작은 해상도
+          useWebWorker: true,
+          fileType: 'image/jpeg',
+          initialQuality: 0.2, // 매우 낮은 품질
+          alwaysKeepResolution: false,
+          preserveExif: false,
+          maxIteration: 20,
+        };
+        
+        try {
+          const recompressedFile = await imageCompression(compressedFile, aggressiveOptions);
+          console.log(`재압축 완료: ${(recompressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
+          
+          if (recompressedFile.size <= VERCEL_SIZE_LIMIT) {
+            return { compressedFile: recompressedFile, extractedMetadata };
+          } else {
+            console.error(`❌ 재압축 후에도 Vercel 제한을 초과합니다: ${(recompressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
+            throw new Error('이미지가 너무 큽니다. 더 작은 이미지를 시도해주세요.');
+          }
+        } catch (recompressError) {
+          console.error('재압축 실패:', recompressError);
+          throw new Error('이미지 압축에 실패했습니다. 더 작은 이미지를 시도해주세요.');
+        }
+      }
       
       return { compressedFile, extractedMetadata };
       
@@ -108,7 +145,12 @@ export default function PhotoUpload() {
       if (!response.ok) {
         // 상태 코드에 따른 에러 메시지 설정
         if (response.status === 413) {
-          throw new Error('이미지 크기가 너무 큽니다. 서버에서 압축 중이지만 처리에 실패했습니다.');
+          throw new Error('이미지 크기가 너무 큽니다. 더 작은 이미지를 시도해주세요.');
+        } else if (response.status === 400) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || '잘못된 요청입니다. 파일을 다시 확인해주세요.');
+        } else if (response.status >= 500) {
+          throw new Error('서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
         } else {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || `파일 업로드에 실패했습니다 (${response.status})`);
