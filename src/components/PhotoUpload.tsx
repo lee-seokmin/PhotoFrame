@@ -9,8 +9,36 @@ import ExifReader from 'exifreader';
 import { isMobileDevice } from '@/utils/deviceUtils';
 import imageCompression from 'browser-image-compression';
 
-// ExifReader 결과 타입은 복잡하므로 단순화
-type ExifMetadata = unknown;
+// Exif 메타데이터 타입 정의
+type ExifValue = {
+  description?: string;
+  value?: string | number;
+  [key: string]: unknown;
+};
+
+interface ExifMetadata {
+  Make?: ExifValue;
+  Model?: ExifValue;
+  ExposureTime?: ExifValue;
+  ISO?: ExifValue;
+  FNumber?: ExifValue;
+  FocalLength?: ExifValue;
+  DateTimeOriginal?: ExifValue;
+  LensModel?: ExifValue;
+  [key: string]: ExifValue | undefined; // 다른 속성들을 위한 인덱스 시그니처
+}
+
+// 필수 메타데이터 타입
+type EssentialMetadata = {
+  Make?: string;
+  Model?: string;
+  ExposureTime?: string;
+  ISO?: number;
+  FNumber?: string;
+  FocalLength?: string;
+  DateTimeOriginal?: string;
+  LensModel?: string;
+};
 
 export default function PhotoUpload() {
   const router = useRouter();
@@ -25,22 +53,82 @@ export default function PhotoUpload() {
    * 2. browser-image-compression을 사용하여 이미지 압축
    * 3. 압축된 이미지와 추출된 메타데이터를 함께 서버로 전송
    */
-  const compressImageWithMetadata = async (file: File): Promise<{ compressedFile: File, extractedMetadata: ExifMetadata | null }> => {
+  const compressImageWithMetadata = async (file: File): Promise<{ compressedFile: File, extractedMetadata: EssentialMetadata | null }> => {
+    const VERCEL_SIZE_LIMIT = 4.0 * 1024 * 1024; // 4MB 타겟 (0.5MB 여유)
+    const isMobile = isMobileDevice();
+    console.log('모바일 디바이스 여부:', isMobile);
+    
     try {
-      // 1. 원본 이미지에서 메타데이터 추출 (모든 환경에서 먼저 수행)
+      // 1. 원본 이미지에서 메타데이터 추출
       const arrayBuffer = await file.arrayBuffer();
-      let extractedMetadata: ExifMetadata | null = null;
+      let extractedMetadata: EssentialMetadata | null = null;
       
       try {
-        extractedMetadata = ExifReader.load(arrayBuffer);
-        console.log('메타데이터 추출 성공:', extractedMetadata);
+        const allMetadata = ExifReader.load(arrayBuffer) as unknown as ExifMetadata;
+        // 필수 메타데이터만 추출 (크기 최소화)
+        const essentialMetadata: EssentialMetadata = {};
+        
+        const getStringValue = (data: ExifValue | undefined): string | undefined => 
+          typeof data?.description === 'string' ? data.description : undefined;
+          
+        const getNumberValue = (data: ExifValue | undefined): number | undefined => {
+          if (typeof data?.value === 'number') return data.value;
+          if (typeof data?.description === 'string') return parseFloat(data.description);
+          return undefined;
+        };
+        
+        const make = getStringValue(allMetadata.Make);
+        const model = getStringValue(allMetadata.Model);
+        const exposureTime = getStringValue(allMetadata.ExposureTime);
+        const iso = getNumberValue(allMetadata.ISO);
+        const fNumber = getStringValue(allMetadata.FNumber);
+        const focalLength = getStringValue(allMetadata.FocalLength);
+        const dateTime = getStringValue(allMetadata.DateTimeOriginal);
+        const lensModel = getStringValue(allMetadata.LensModel);
+        
+        if (make) essentialMetadata.Make = make;
+        if (model) essentialMetadata.Model = model;
+        if (exposureTime) essentialMetadata.ExposureTime = exposureTime;
+        if (iso !== undefined) essentialMetadata.ISO = iso;
+        if (fNumber) essentialMetadata.FNumber = fNumber;
+        if (focalLength) essentialMetadata.FocalLength = focalLength;
+        if (dateTime) essentialMetadata.DateTimeOriginal = dateTime;
+        if (lensModel) essentialMetadata.LensModel = lensModel;
+        
+        // 메타데이터가 비어있지 않은 경우에만 할당
+        if (Object.keys(essentialMetadata).length > 0) {
+          extractedMetadata = essentialMetadata;
+        }
+        
+        console.log('필수 메타데이터 추출 완료', extractedMetadata);
       } catch (exifError) {
         console.warn('메타데이터 추출 실패:', exifError);
-        // 메타데이터 추출 실패해도 계속 진행
       }
       
-      // 2. 이미지 압축 (VERCEL_SIZE_LIMIT인 4.5MB 이하로)
-      const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+      // 2. 이미지 압축 (더 공격적인 설정)
+      const compressWithOptions = async (file: File, targetSizeMB: number, quality: number, maxDimension: number): Promise<File> => {
+        console.log(`압축 시도: 타겟 ${targetSizeMB}MB, 품질 ${quality}, 최대 크기 ${maxDimension}px`);
+        
+        const options = {
+          maxSizeMB: targetSizeMB,
+          maxWidthOrHeight: maxDimension,
+          useWebWorker: true,
+          fileType: 'image/jpeg',
+          initialQuality: quality,
+          alwaysKeepResolution: false,
+          preserveExif: false,
+          maxIteration: 20,
+        };
+        
+        try {
+          const result = await imageCompression(file, options);
+          console.log(`압축 완료: ${(result.size / (1024 * 1024)).toFixed(2)}MB (${((1 - result.size / file.size) * 100).toFixed(1)}% 감소)`);
+          return result;
+        } catch (error) {
+          console.error('압축 실패:', error);
+          throw error;
+        }
+      };
       
       // 파일이 이미 충분히 작으면 원본 사용
       if (file.size <= VERCEL_SIZE_LIMIT) {
@@ -48,62 +136,47 @@ export default function PhotoUpload() {
         return { compressedFile: file, extractedMetadata };
       }
       
-      // 모바일 디바이스 감지
-      const isMobile = isMobileDevice();
-      console.log('모바일 디바이스 여부:', isMobile);
+      // 압축 단계별로 시도 (점진적으로 더 공격적인 설정 적용)
+      interface CompressionStage {
+        size: number;
+        quality: number;
+        dimension: number;
+      }
       
-      // browser-image-compression 옵션 설정 (Vercel 제한에 맞춰 매우 공격적으로 압축)
-      const options = {
-        maxSizeMB: 2.5, // 2.5MB로 제한 (Vercel 4.5MB 제한보다 훨씬 여유있게)
-        maxWidthOrHeight: isMobile ? 1500 : 2000, // 더 작은 해상도로 설정
-        useWebWorker: true, // 웹 워커 사용으로 UI 블로킹 방지
-        fileType: 'image/jpeg', // JPEG로 변환하여 최적의 압축률
-        initialQuality: isMobile ? 0.3 : 0.4, // 매우 낮은 초기 품질로 설정
-        alwaysKeepResolution: false, // 필요시 해상도 조정 허용
-        preserveExif: false, // EXIF 메타데이터는 별도로 추출했으므로 제거
-        maxIteration: 15, // 최대 압축 시도 횟수 증가
-      };
+      const compressionStages: CompressionStage[] = [
+        { size: 3.0, quality: 0.6, dimension: isMobile ? 1600 : 2000 }, // 1차 시도
+        { size: 2.5, quality: 0.5, dimension: isMobile ? 1400 : 1800 }, // 2차 시도
+        { size: 2.0, quality: 0.4, dimension: isMobile ? 1200 : 1600 }, // 3차 시도
+        { size: 1.5, quality: 0.3, dimension: isMobile ? 1000 : 1200 }, // 4차 시도 (최후의 수단)
+      ];
       
-      console.log('browser-image-compression으로 압축 시작...');
-      console.log(`원본 파일 크기: ${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+      let lastError: Error | null = null;
+      let compressedFile = file;
       
-      const compressedFile = await imageCompression(file, options);
-      
-      console.log(`압축 완료: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB (원본: ${(file.size / (1024 * 1024)).toFixed(2)}MB)`);
-      console.log(`압축률: ${((1 - compressedFile.size / file.size) * 100).toFixed(1)}%`);
-      
-      // 압축이 충분하지 않은 경우 추가 압축 시도
-      if (compressedFile.size > VERCEL_SIZE_LIMIT) {
-        console.warn(`⚠️ 압축된 파일이 여전히 Vercel 제한(${(VERCEL_SIZE_LIMIT / (1024 * 1024)).toFixed(1)}MB)을 초과합니다: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
-        console.log('추가 압축 시도 중...');
-        
-        // 더 공격적인 압축 옵션으로 재시도
-        const aggressiveOptions = {
-          maxSizeMB: 2.0, // 2MB로 더 제한
-          maxWidthOrHeight: isMobile ? 1200 : 1500, // 더 작은 해상도
-          useWebWorker: true,
-          fileType: 'image/jpeg',
-          initialQuality: 0.2, // 매우 낮은 품질
-          alwaysKeepResolution: false,
-          preserveExif: false,
-          maxIteration: 20,
-        };
-        
+      for (const stage of compressionStages) {
         try {
-          const recompressedFile = await imageCompression(compressedFile, aggressiveOptions);
-          console.log(`재압축 완료: ${(recompressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
+          compressedFile = await compressWithOptions(
+            compressedFile,
+            stage.size,
+            stage.quality,
+            stage.dimension
+          );
           
-          if (recompressedFile.size <= VERCEL_SIZE_LIMIT) {
-            return { compressedFile: recompressedFile, extractedMetadata };
-          } else {
-            console.error(`❌ 재압축 후에도 Vercel 제한을 초과합니다: ${(recompressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
-            throw new Error('이미지가 너무 큽니다. 더 작은 이미지를 시도해주세요.');
+          // 압축 후 크기 확인
+          if (compressedFile.size <= VERCEL_SIZE_LIMIT) {
+            console.log(`✅ 압축 성공: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB`);
+            return { compressedFile, extractedMetadata };
           }
-        } catch (recompressError) {
-          console.error('재압축 실패:', recompressError);
-          throw new Error('이미지 압축에 실패했습니다. 더 작은 이미지를 시도해주세요.');
+          
+          console.warn(`⚠️ 압축 후에도 크기 초과: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB > ${(VERCEL_SIZE_LIMIT / (1024 * 1024)).toFixed(1)}MB`);
+        } catch (error) {
+          console.warn(`압축 단계 실패 (${stage.size}MB/${stage.quality}/${stage.dimension}px):`, error);
+          lastError = error as Error;
         }
       }
+      
+      // 모든 단계 실패 시 에러
+      throw lastError || new Error('이미지 압축에 실패했습니다. 더 작은 이미지를 시도해주세요.');
       
       return { compressedFile, extractedMetadata };
       
@@ -163,13 +236,19 @@ export default function PhotoUpload() {
       console.log('압축된 파일 크기:', (compressedFile.size / (1024 * 1024)).toFixed(2) + 'MB');
       console.log('메타데이터 포함 여부:', extractedMetadata ? 'O' : 'X');
       
-      // 전체 FormData 크기 확인
-      const VERCEL_LIMIT = 4.5 * 1024 * 1024;
-      const totalSize = compressedFile.size + (extractedMetadata ? JSON.stringify(extractedMetadata).length : 0);
-      console.log('전체 FormData 예상 크기:', (totalSize / (1024 * 1024)).toFixed(2) + 'MB');
+      // 압축된 파일 크기와 메타데이터 크기 확인
+      const VERCEL_LIMIT = 4.0 * 1024 * 1024; // 4MB 타겟 (0.5MB 여유)
+      const metadataSize = extractedMetadata ? new TextEncoder().encode(JSON.stringify(extractedMetadata)).length : 0;
+      const totalSize = compressedFile.size + metadataSize;
+      
+      console.log('파일 크기:', (compressedFile.size / (1024 * 1024)).toFixed(2) + 'MB');
+      console.log('메타데이터 크기:', (metadataSize / 1024).toFixed(2) + 'KB');
+      console.log('전체 크기:', (totalSize / (1024 * 1024)).toFixed(2) + 'MB');
       
       if (totalSize > VERCEL_LIMIT) {
-        console.error(`❌ 전체 크기가 Vercel 제한을 초과합니다: ${(totalSize / (1024 * 1024)).toFixed(2)}MB > ${(VERCEL_LIMIT / (1024 * 1024)).toFixed(1)}MB`);
+        const overSizeMB = (totalSize - VERCEL_LIMIT) / (1024 * 1024);
+        console.error(`❌ 전체 크기가 Vercel 제한을 초과합니다: ${(totalSize / (1024 * 1024)).toFixed(2)}MB > ${(VERCEL_LIMIT / (1024 * 1024)).toFixed(1)}MB (${overSizeMB.toFixed(2)}MB 초과)`);
+        throw new Error(`이미지가 너무 큽니다. 더 작은 이미지를 선택하거나 해상도를 낮춰주세요. (현재: ${(totalSize / (1024 * 1024)).toFixed(1)}MB / 제한: ${(VERCEL_LIMIT / (1024 * 1024)).toFixed(1)}MB)`);
       } else {
         console.log('✅ Vercel 제한 내에서 업로드 가능합니다.');
       }
