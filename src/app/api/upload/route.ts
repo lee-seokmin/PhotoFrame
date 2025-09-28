@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import exifr from 'exifr';
 import sharp from 'sharp';
 
+// exifr 옵션 타입 확장
+type ExifrOptions = Parameters<typeof exifr.parse>[1] & {
+  chunked?: boolean;
+  chunkSize?: number;
+  chunkLimit?: number;
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Get the form data from the request
@@ -63,9 +70,33 @@ export async function POST(request: NextRequest) {
       // 모바일이 아니거나 클라이언트 메타데이터 추출 실패 시 서버에서 추출 시도
       if (!metadata) {
         try {
-          // exifr로 메타데이터 추출 시도
-          metadata = await exifr.parse(Buffer.from(buffer));
-          console.log('서버에서 메타데이터 추출 성공');
+          // 10MB 이상의 대용량 파일을 위한 최적화된 메타데이터 추출
+          if (file.size > 10 * 1024 * 1024) {
+            console.log('대용량 파일(10MB 초과) 메타데이터 추출 시도');
+            // 대용량 파일의 경우, 메모리 사용량을 줄이기 위해 스트림 기반으로 메타데이터만 추출
+            const bufferForMetadata = Buffer.alloc(Math.min(65536, buffer.byteLength));
+            // 파일의 처음 부분만 복사 (EXIF는 일반적으로 파일 앞부분에 위치)
+            bufferForMetadata.set(new Uint8Array(buffer, 0, bufferForMetadata.length));
+            // 대용량 파일을 위한 최적화된 파싱 옵션
+            const exifrOptions: ExifrOptions = {
+              // 필요한 메타데이터만 파싱
+              tiff: true,
+              ifd0: {},
+              exif: true,
+              gps: true,
+              // 대용량 파일을 위한 청크 처리 옵션
+              chunked: true,
+              chunkSize: 65536, // 64KB 청크로 처리
+              chunkLimit: 10    // 최대 10개 청크(약 640KB)까지 확인
+            };
+            
+            metadata = await exifr.parse(bufferForMetadata, exifrOptions);
+            console.log('대용량 파일 메타데이터 추출 성공');
+          } else {
+            // 일반 파일은 기존 방식으로 처리
+            metadata = await exifr.parse(Buffer.from(buffer));
+            console.log('일반 파일 메타데이터 추출 성공');
+          }
         } catch (exifrError) {
           console.error('exifr로 메타데이터 추출 실패:', exifrError);
         }
