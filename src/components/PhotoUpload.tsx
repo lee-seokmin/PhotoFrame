@@ -7,6 +7,7 @@ import StatusMessage from '@/components/StatusMessage';
 import { usePhoto } from '@/contexts/PhotoContext';
 import ExifReader from 'exifreader';
 import { isMobileDevice } from '@/utils/deviceUtils';
+import imageCompression from 'browser-image-compression';
 
 // ExifReader 결과 타입은 복잡하므로 단순화
 type ExifMetadata = unknown;
@@ -21,145 +22,59 @@ export default function PhotoUpload() {
   /**
    * 클라이언트 측에서 메타데이터를 보존하면서 이미지 압축
    * 1. 원본 이미지에서 EXIF 메타데이터를 추출
-   * 2. 이미지 압축 (canvas 사용)
+   * 2. browser-image-compression을 사용하여 이미지 압축
    * 3. 압축된 이미지와 추출된 메타데이터를 함께 서버로 전송
    */
   const compressImageWithMetadata = async (file: File): Promise<{ compressedFile: File, extractedMetadata: ExifMetadata | null }> => {
-    return new Promise(async (resolve) => {
+    try {
+      // 1. 원본 이미지에서 메타데이터 추출 (모든 환경에서 먼저 수행)
+      const arrayBuffer = await file.arrayBuffer();
+      let extractedMetadata: ExifMetadata | null = null;
+      
       try {
-        // 1. 원본 이미지에서 메타데이터 추출 (모든 환경에서 먼저 수행)
-        const arrayBuffer = await file.arrayBuffer();
-        let extractedMetadata: ExifMetadata | null = null;
-        
-        try {
-          extractedMetadata = ExifReader.load(arrayBuffer);
-          console.log('메타데이터 추출 성공:', extractedMetadata);
-        } catch (exifError) {
-          console.warn('메타데이터 추출 실패:', exifError);
-          // 메타데이터 추출 실패해도 계속 진행
-        }
-        
-        // 2. 이미지 압축 (VERCEL_SIZE_LIMIT인 4.5MB 이하로)
-        const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
-        
-        // 파일이 이미 충분히 작으면 원본 사용
-        if (file.size <= VERCEL_SIZE_LIMIT) {
-          console.log('파일 크기가 이미 충분히 작음:', (file.size / (1024 * 1024)).toFixed(2) + 'MB');
-          resolve({ compressedFile: file, extractedMetadata });
-          return;
-        }
-        
-        // 모바일 디바이스 감지
-        const isMobile = isMobileDevice();
-        console.log('모바일 디바이스 여부:', isMobile);
-        
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        
-        img.onload = () => {
-          // 점진적 압축 전략
-          const compressWithQuality = (initialQuality: number, maxAttempts: number) => {
-            let currentQuality = initialQuality;
-            let attempt = 0;
-            
-            const tryCompression = () => {
-              // 캔버스 생성 및 이미지 그리기
-              const canvas = document.createElement('canvas');
-              
-              // 원본 크기 유지 또는 대형 이미지 리사이징
-              let width = img.width;
-              let height = img.height;
-              
-              // 매우 큰 이미지의 경우 해상도 감소
-              const MAX_DIMENSION = 3000;
-              if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-                if (width > height) {
-                  height = Math.round((height / width) * MAX_DIMENSION);
-                  width = MAX_DIMENSION;
-                } else {
-                  width = Math.round((width / height) * MAX_DIMENSION);
-                  height = MAX_DIMENSION;
-                }
-              }
-              
-              canvas.width = width;
-              canvas.height = height;
-              
-              const ctx = canvas.getContext('2d');
-              if (!ctx) {
-                console.warn('Canvas 컨텍스트를 가져올 수 없음, 원본 파일 사용');
-                URL.revokeObjectURL(img.src);
-                resolve({ compressedFile: file, extractedMetadata });
-                return;
-              }
-              
-              ctx.drawImage(img, 0, 0, width, height);
-              
-              // JPEG 형식으로 압축 (최상의 압축률)
-              canvas.toBlob(
-                (blob) => {
-                  if (!blob) {
-                    console.warn('Blob 변환 실패, 원본 파일 사용');
-                    URL.revokeObjectURL(img.src);
-                    resolve({ compressedFile: file, extractedMetadata });
-                    return;
-                  }
-                  
-                  // 압축된 크기 확인
-                  console.log(`압축 품질 ${currentQuality.toFixed(1)}로 압축된 크기: ${(blob.size / (1024 * 1024)).toFixed(2)}MB`);
-                  
-                  if (blob.size <= VERCEL_SIZE_LIMIT || currentQuality <= 0.1 || attempt >= maxAttempts) {
-                    // 압축된 파일 생성
-                    const compressedFile = new File(
-                      [blob], 
-                      file.name, 
-                      { type: 'image/jpeg', lastModified: Date.now() }
-                    );
-                    
-                    URL.revokeObjectURL(img.src);
-                    resolve({ compressedFile, extractedMetadata });
-                  } else {
-                    // 품질 낮추고 재시도
-                    attempt++;
-                    currentQuality = Math.max(currentQuality - 0.1, 0.1);
-                    console.log(`압축 재시도 #${attempt}, 품질: ${currentQuality.toFixed(1)}`);
-                    tryCompression();
-                  }
-                },
-                'image/jpeg',
-                currentQuality
-              );
-            };
-            
-            tryCompression();
-          };
-          
-          // 이미지 크기에 따른 초기 품질 설정 (모바일에서는 더 낮은 초기 품질 적용)
-          const isLargeImage = img.width > 3000 || img.height > 3000 || file.size > 10 * 1024 * 1024;
-          const initialQuality = isLargeImage ? 0.5 : (isMobile ? 0.6 : 0.8); // 모바일에서는 더 낮은 품질로 시작
-          
-          compressWithQuality(initialQuality, isMobile ? 6 : 8); // 모바일에서는 시도 횟수 제한
-        };
-        
-        img.onerror = () => {
-          console.warn('이미지 로딩 실패, 원본 파일 사용');
-          URL.revokeObjectURL(img.src);
-          resolve({ compressedFile: file, extractedMetadata });
-        };
-        
-        // 타임아웃 설정 (모바일에서는 더 긴 타임아웃 적용)
-        setTimeout(() => {
-          if (img.complete) return;
-          console.warn('이미지 처리 타임아웃, 원본 파일 사용');
-          URL.revokeObjectURL(img.src);
-          resolve({ compressedFile: file, extractedMetadata });
-        }, isMobile ? 15000 : 10000); // 모바일에서는 15초, 그 외에는 10초
-        
-      } catch (err) {
-        console.error('이미지 압축 오류:', err);
-        resolve({ compressedFile: file, extractedMetadata: null });
+        extractedMetadata = ExifReader.load(arrayBuffer);
+        console.log('메타데이터 추출 성공:', extractedMetadata);
+      } catch (exifError) {
+        console.warn('메타데이터 추출 실패:', exifError);
+        // 메타데이터 추출 실패해도 계속 진행
       }
-    });
+      
+      // 2. 이미지 압축 (VERCEL_SIZE_LIMIT인 4.5MB 이하로)
+      const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+      
+      // 파일이 이미 충분히 작으면 원본 사용
+      if (file.size <= VERCEL_SIZE_LIMIT) {
+        console.log('파일 크기가 이미 충분히 작음:', (file.size / (1024 * 1024)).toFixed(2) + 'MB');
+        return { compressedFile: file, extractedMetadata };
+      }
+      
+      // 모바일 디바이스 감지
+      const isMobile = isMobileDevice();
+      console.log('모바일 디바이스 여부:', isMobile);
+      
+      // browser-image-compression 옵션 설정
+      const options = {
+        maxSizeMB: 4.0, // 4MB로 제한 (Vercel 제한보다 여유있게)
+        maxWidthOrHeight: isMobile ? 2500 : 3000, // 모바일에서는 더 작은 해상도
+        useWebWorker: true, // 웹 워커 사용으로 UI 블로킹 방지
+        fileType: 'image/jpeg', // JPEG로 변환하여 최적의 압축률
+        initialQuality: isMobile ? 0.6 : 0.8, // 모바일에서는 더 낮은 초기 품질
+        alwaysKeepResolution: false, // 필요시 해상도 조정 허용
+        preserveExif: false, // EXIF 메타데이터는 별도로 추출했으므로 제거
+      };
+      
+      console.log('browser-image-compression으로 압축 시작...');
+      const compressedFile = await imageCompression(file, options);
+      
+      console.log(`압축 완료: ${(compressedFile.size / (1024 * 1024)).toFixed(2)}MB (원본: ${(file.size / (1024 * 1024)).toFixed(2)}MB)`);
+      
+      return { compressedFile, extractedMetadata };
+      
+    } catch (err) {
+      console.error('이미지 압축 오류:', err);
+      // 압축 실패시 원본 파일과 메타데이터 반환
+      return { compressedFile: file, extractedMetadata: null };
+    }
   };
 
   const handleFileSelect = async (selectedFile: File) => {

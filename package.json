@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
     "exifr": "^7.1.3",
     "exifreader": "^4.27.0",
     "fs": "^0.0.1-security",
